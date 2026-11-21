@@ -50,8 +50,12 @@ export function dryRunPatch({ patch = defaultPatch, fixture = defaultFixture } =
     const patchedPath = join(tmp, 'lib', 'index.js')
     const patched = readFileSync(patchedPath, 'utf8')
 
-    // F2: 语法校验——补丁能打上不代表语法没坏。与 install.mjs 的 node --check 对齐门禁强度。
-    const syntax = safeSpawn(process.execPath, ['--check', patchedPath])
+    // F2: 语法校验——补丁能打上不代表语法没坏。
+    // 关键：index.js 在临时仓库里没有 package.json，node 按 CJS 解析，ESM 中部的语法错会漏检。
+    // 复制成 .mjs 再 check（评审 B 组证明能抓到、D 组证明不误报）。
+    const checkMjs = join(tmp, 'check.mjs')
+    copyFileSync(patchedPath, checkMjs)
+    const syntax = safeSpawn(process.execPath, ['--check', checkMjs])
     if (syntax.status !== 0) {
       problems.push('打补丁后 node --check 失败（语法被破坏）：' + spawnErrorText(syntax, 'node --check'))
       return { ok: false, problems, stats: null }

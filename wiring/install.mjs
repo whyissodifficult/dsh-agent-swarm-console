@@ -14,7 +14,8 @@
  * 打完补丁后做后置校验：node --check + 断言 spawnExternal 恰好 2 处。
  * 不联网、不改配置、不碰令牌。配置样例见 wiring/README.md。
  */
-import { existsSync, readFileSync, copyFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { safeSpawn, spawnErrorText } from './sandbox-spawn.mjs'
@@ -72,13 +73,21 @@ if (current.includes(INSTALL_MARK)) {
     process.exit(1)
   }
 
-  // 后置校验 1：语法
-  const syntax = safeSpawn(process.execPath, ['--check', indexFile])
-  if (syntax.status !== 0) {
-    console.error('❌ 打补丁后 node --check 失败，语法被破坏：')
-    console.error(spawnErrorText(syntax, 'node --check'))
-    console.error('   备份在 ' + dir + '，可据此还原。')
-    process.exit(1)
+  // 后置校验 1：语法。复制成 .mjs 再 check —— .js 在无 type:module 的目录里按 CJS
+  // 解析，ESM 中部的语法错会漏检（评审 F2 证据 A/B）。
+  const checkDir = mkdtempSync(join(tmpdir(), 'wiring-install-check-'))
+  try {
+    const checkMjs = join(checkDir, 'check.mjs')
+    copyFileSync(indexFile, checkMjs)
+    const syntax = safeSpawn(process.execPath, ['--check', checkMjs])
+    if (syntax.status !== 0) {
+      console.error('❌ 打补丁后 node --check 失败，语法被破坏：')
+      console.error(spawnErrorText(syntax, 'node --check'))
+      console.error('   备份在 ' + dir + '，可据此还原。')
+      process.exit(1)
+    }
+  } finally {
+    try { rmSync(checkDir, { recursive: true, force: true }) } catch { /* ignore */ }
   }
   // 后置校验 2：结构
   const after = readFileSync(indexFile, 'utf8')
