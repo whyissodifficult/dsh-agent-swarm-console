@@ -32,6 +32,21 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 
 ---
 
+## 安装
+
+**已验证**：从本地目录安装 bundle（`install_bundle` 返回 `application: applied`，插件以 link 方式装入 profile）。
+
+```bash
+# 在 DSH 会话里执行（plugin 为本仓库内的插件目录）
+plugin_manager install_bundle <plugin 绝对路径>
+```
+
+装完以 link 方式挂在当前 profile：**改代码需重启 DSH 或等 HMR 才生效**。配置 `externalAgents` 见 [plugin/docs/DETAIL.md](plugin/docs/DETAIL.md)。
+
+**待验证**（尚未实测，不保证可用）：通过 npm 包名安装、从插件市场一键安装。这两条路径等正式发布后再补证据。
+
+---
+
 ## 状态
 
 > 🚧 **设计中，尚未发布** —— 已报名 DeepSeek Harness 插件作者支持计划，等待第一个可运行版本。
@@ -54,9 +69,9 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 | 阶段3 | 插件化：bundle + 画布 | ⏳ |
 | 阶段4 | 交付门禁：evidence 四态 + 三态 gate | ⏳ |
 
-### 当前状态与安装
+### 当前状态
 
-**现在还不能装成 DSH 插件**——插件形态（bundle + 画布）在开发中。当前可用的是两层代码，按下面的方式验证：
+插件骨架（`plugin/`）已能以 bundle 装进 DSH 并注册 `swarm_run`；完整形态（画布 + 门禁 UI）仍在开发中。核心两层代码按下面的方式验证：
 
 ```bash
 npm test                                  # 适配层自测（32 项）

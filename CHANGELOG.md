@@ -1,5 +1,8 @@
 # 更新日志
 
+## 0.1.0 · 可安装插件 + 交付门禁 v1
+3A 把适配层做成可安装的 DSH bundle（`plugin/`，`swarm_run` 已实机注册）；verify v1 落地任务契约、证据与 GREEN/YELLOW/RED 三态门禁，并把 H1 证据先于验收、H2 失败必给可执行复现命令、H3 放行只能由用户触发写进代码；`npm run gate` 串起七段门禁（probe / selftest / plugin:test / smoke / pack / wiring:test / dryrun），让每次改动都能一键验完再交付。
+
 ## 0.0.1 · 适配层（`src/`）
 把国内 agent（DeepSeek/Qoder/Kimi/Ollama）用 `{id, result, dispose}` 伪装成 DSH 原生 subagent run —— 先有一层不依赖宿主版本、能独立跑通自测的核心，后面所有形态都建立在它上面。
 

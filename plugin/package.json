@@ -2,12 +2,22 @@
   "name": "dsh-swarm-console",
   "version": "0.1.0",
   "type": "module",
-  "description": "Run one external agent from DSH, with a visible gate (WIP).",
+  "description": "Run one external agent from DSH, with a visible gate (v0.1 · 门禁可用，画布开发中).",
+  "keywords": ["deepseek-harness", "dsh-plugin", "agent", "swarm", "verification", "gate"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whyissodifficult/dsh-agent-swarm-console.git",
+    "directory": "plugin"
+  },
+  "license": "MIT",
+  "author": "郑志阳 (Walk in the white)",
+  "homepage": "https://github.com/whyissodifficult/dsh-agent-swarm-console",
+  "bugs": { "url": "https://github.com/whyissodifficult/dsh-agent-swarm-console/issues" },
   "engines": { "node": ">=20.3" },
   "exports": {
     ".": "./index.js",
     "./locale/*.json": "./locale/*.json"
   },
-  "files": ["index.js", "lib", "cordis.patch.yml", "locale", "docs", "test"],
+  "files": ["index.js", "lib", "cordis.patch.yml", "locale", "docs"],
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }

@@ -42,7 +42,8 @@ console.log('\n=== 断言 ===')
 check('含 lib/adapter.js', files.includes('lib/adapter.js'))
 check('不含 ../ 越界路径', files.every((f) => !f.includes('../')))
 check('含 index.js', files.includes('index.js'))
-check('不含 icon.svg（未到位，不能指向不存在文件）', !files.includes('icon.svg'))
+check('不含 test/ 路径（测试不进发布包）', files.every((f) => !f.startsWith('test/')))
+check('不含 icon.svg（未到位，不能指向不存在文件；图标到位后改为必须含）', !files.includes('icon.svg'))
 
 if (fail > 0) {
   console.error(`\n❌ plugin:pack 失败：${fail} 条断言未过`)
