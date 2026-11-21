@@ -1,0 +1,25 @@
+{
+  "id": "code-change",
+  "label": "代码改动策略",
+  "checks": [
+    {
+      "id": "exists",
+      "type": "file.exists",
+      "description": "验收条件指定的文件存在",
+      "input": "criteria[].checkIds -> artifacts[].path"
+    },
+    {
+      "id": "diff",
+      "type": "workspace.diff",
+      "description": "取宿主 workspaceChanges.summary|diff，不自建 diff",
+      "input": "workspaceChanges.summary || workspaceChanges.diff"
+    },
+    {
+      "id": "tests",
+      "type": "exec",
+      "description": "执行测试命令，退出码必须为 0",
+      "input": "constraints[].testCmd || 'npm test'",
+      "successExitCode": 0
+    }
+  ]
+}

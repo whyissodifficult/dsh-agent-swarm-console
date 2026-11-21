@@ -29,26 +29,34 @@ const validConfig = {
   capabilityRouting: true,
 }
 
-let captured = null
+const registered = new Map()
 const fakeCtx = {
   effect: (fn) => fn(),
+  get: () => undefined, // 宿主未装 action-cards 服务 → 卡片注册跳过
   tools: {
-    register: (def) => { captured = def; return () => {} },
+    register: (def) => { registered.set(def.name, def); return () => {} },
   },
 }
 
 console.log('\n=== swarm_run 形状 ===')
-ok('apply 调用了 ctx.tools.register', () => {
+ok('apply 注册了工具', () => {
   apply(fakeCtx, validConfig)
-  assert.ok(captured, 'register 未被调用')
+  assert.ok(registered.size >= 1, '没有注册任何工具')
 })
-ok("captured.name === 'swarm_run'", () => assert.equal(captured.name, 'swarm_run'))
-ok('parameters.required 含 task', () => assert.ok(captured.parameters.required.includes('task')))
+ok("注册了 swarm_run", () => assert.ok(registered.has('swarm_run')))
+ok('swarm_run.parameters.required 含 task', () => {
+  assert.ok(registered.get('swarm_run').parameters.required.includes('task'))
+})
 ok('output.render 返回 text 块', () => {
-  const blocks = captured.output.render({}, { stopReason: 'completed', text: 'hi', ms: 1 })
+  const blocks = registered.get('swarm_run').output.render({}, { stopReason: 'completed', text: 'hi', ms: 1 })
   assert.equal(blocks[0].type, 'text')
   assert.equal(blocks[0].text, '[completed] hi')
 })
+
+console.log('\n=== verify 三工具已注册 ===')
+for (const name of ['verify_contract', 'verify_run', 'verify_status']) {
+  ok(`注册了 ${name}`, () => assert.ok(registered.has(name), `缺少 ${name}`))
+}
 
 console.log('\n=== 错误配置必须 throw（反证）===')
 ok('config.externalAgents 传字符串 → throw', () => {

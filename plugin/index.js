@@ -7,6 +7,8 @@
  * src/external-agent-adapter.js 是反向 re-export 的兼容 shim。
  */
 import { callChat } from './lib/adapter.js'
+import { z } from './lib/core/mini-schema.js'
+import { verifyContract, verifyRun, verifyStatus, guardCaller } from './lib/core/verify.js'
 
 export const inject = ['tools']
 
@@ -101,6 +103,147 @@ export function apply(ctx, config) {
       const t0 = Date.now()
       const { stopReason, text } = await runExternal(agents, args, exec?.signal)
       return { stopReason, text, ms: Date.now() - t0 }
+    },
+  }))
+
+  registerVerifyTools(ctx)
+  registerGateCard(ctx)
+}
+
+/** D5 · 三个 verify 工具。核心逻辑在 lib/core/verify.js，这里只做薄封装。 */
+function registerVerifyTools(ctx) {
+  const defs = [
+    {
+      name: 'verify_contract',
+      description: '冻结一个任务契约（目标/约束/验收条件），返回 contract.id。契约内容变化会换 id。',
+      parameters: {
+        type: 'object',
+        properties: {
+          objective: { type: 'string' },
+          constraints: { type: 'array', items: { type: 'string' } },
+          criteria: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                text: { type: 'string' },
+                checkIds: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['id', 'text'],
+            },
+          },
+        },
+        required: ['objective'],
+        additionalProperties: false,
+      },
+      output: {
+        schema: { type: 'object', properties: { contractId: { type: 'string' } }, required: ['contractId'] },
+        render: (args, v) => [{ type: 'text', text: `contract ${v.contractId} 已冻结` }],
+      },
+      execute: async (args) => verifyContract(args),
+    },
+    {
+      name: 'verify_run',
+      description: '按策略跑一次证据校验，返回 GREEN/YELLOW/RED 三态与可复现命令。',
+      parameters: {
+        type: 'object',
+        properties: {
+          contractId: { type: 'string' },
+          checks: { type: 'array', items: { type: 'object' } },
+        },
+        required: ['contractId'],
+        additionalProperties: false,
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            decision: { type: 'string' }, reasons: { type: 'array', items: { type: 'string' } }, evidenceHash: { type: 'string' },
+          },
+          required: ['decision', 'reasons', 'evidenceHash'],
+        },
+        render: (args, v) => [{ type: 'text', text: `门禁 ${v.decision}：${v.reasons.join('；')}` }],
+      },
+      execute: async (args, exec) => {
+        // D4: diff 取宿主 workspaceChanges，不自建 diff
+        const wc = exec?.workspaceChanges ?? {}
+        const diffEvidence = typeof wc.summary === 'string' ? wc.summary : (typeof wc.diff === 'string' ? wc.diff : undefined)
+        const evidenceInput = args.checks ? { checks: args.checks, diff: diffEvidence } : undefined
+        return verifyRun({ contractId: args.contractId, evidenceInput })
+      },
+    },
+    {
+      name: 'verify_status',
+      description: '查某个契约最近一次门禁决定与时间。',
+      parameters: {
+        type: 'object',
+        properties: { contractId: { type: 'string' } },
+        required: ['contractId'],
+        additionalProperties: false,
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: { decision: { type: 'string' }, at: { type: 'string' } },
+          required: ['decision'],
+        },
+        render: (args, v) => [{ type: 'text', text: `最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}` }],
+      },
+      execute: async (args) => verifyStatus({ contractId: args.contractId }),
+    },
+  ]
+  for (const def of defs) ctx.effect(() => ctx.tools.register(def))
+}
+
+/**
+ * D5 · 门禁卡片种类。
+ * 用 ctx.get('actionCards') 可选获取 —— 宿主未装 action-cards 服务时跳过（不阻塞 swarm_run）。
+ * details 用零依赖 mini-schema 满足 safeParse 鸭子类型。
+ */
+function registerGateCard(ctx) {
+  const cards = typeof ctx.get === 'function' ? ctx.get('actionCards') : undefined
+  if (!cards || typeof cards.register !== 'function') return
+
+  const details = z.object({
+    decision: z.enum(['GREEN', 'YELLOW', 'RED']),
+    reasons: z.array(z.string()),
+    contractId: z.string({ nonempty: true }),
+    reproCmd: z.optional(z.string()),
+  })
+
+  ctx.effect(() => cards.register({
+    action: 'dsh-swarm-console/gate',
+    skill: 'dsh-swarm-console-verify',
+    invitation: '验收结论已出。请查看门禁卡片并选择 approve 放行或 retry 重跑。',
+    details,
+    verbs: { approve: { writes: true }, retry: { writes: true } },
+    openPhases: ['proposed', 'refused'],
+    async act(agent, proposal, verb, payload) {
+      // H3：放行只能由用户触发。非用户（subagent / 代码发起）拒绝并记事件。
+      const guard = guardCaller(agent, (a, decision) => cards.record(a, decision))
+      if (guard) return guard
+
+      const { contractId, decision } = proposal.details
+      if (verb === 'approve') {
+        if (decision !== 'GREEN') {
+          cards.record(agent, { callId: proposal.callId, action: proposal.action, phase: 'refused', data: { reason: '非 GREEN 不可放行' } })
+          return { status: 'refused', reason: '非 GREEN 不可放行' }
+        }
+        const d = { callId: proposal.callId, action: proposal.action, phase: 'approved', data: { contractId } }
+        cards.record(agent, d)
+        return { status: 'settled', decision: d }
+      }
+      if (verb === 'retry') {
+        const r = verifyRun({ contractId, evidenceInput: payload?.evidence })
+        const d = {
+          callId: proposal.callId, action: proposal.action, phase: 'proposed',
+          data: { contractId, decision: r.decision, reasons: r.reasons, ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}) },
+        }
+        cards.record(agent, d)
+        return { status: 'settled', decision: d }
+      }
+      return { status: 'refused', reason: `未知操作 ${verb}` }
     },
   }))
 }
