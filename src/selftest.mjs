@@ -2,8 +2,14 @@
  * P1 适配层自测 —— 不依赖真实 API，用假响应验证全链路。
  * 跑法：node selftest.mjs
  */
-import { buildPrompt, parsePlanFromOutput, parseTodos, parseResult, detectCapabilities } from './adapter.js'
-import { createAdapterRun } from './spawn-adapter.js'
+import {
+  buildPrompt,
+  parsePlanFromOutput,
+  parseTodos,
+  parseResult,
+  detectCapabilities,
+  createAdapterRun,
+} from './external-agent-adapter.js'
 
 let pass = 0, fail = 0
 function ok(name, cond, extra = '') {

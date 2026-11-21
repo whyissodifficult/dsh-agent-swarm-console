@@ -1,0 +1,17 @@
+{
+  "name": "dsh-agent-swarm-console",
+  "version": "0.0.1",
+  "private": true,
+  "description": "External-agent adapter layer for DSH Agent Swarm — run domestic AI models through a native-looking subagent run.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node src/selftest.mjs",
+    "verify:patch": "node verify-patch-config.mjs"
+  },
+  "devDependencies": {
+    "yaml": "^2.5.0"
+  }
+}
