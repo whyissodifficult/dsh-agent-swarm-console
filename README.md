@@ -77,6 +77,14 @@ node wiring/install.mjs <上游 dsh-agent-swarm 目录>   # 把适配层接进 s
 
 ---
 
+## 上架清单
+
+- [ ] icon.svg（原创或可再分发授权）放入 `plugin/` 包根，`exports` 加 `"./icon": "./icon.svg"`，`files` 加 `"icon.svg"`
+
+> 包名说明：npm 包名是 `dsh-swarm-console`，仓库名沿用 `dsh-agent-swarm-console`（两者不必一致）。
+
+---
+
 ## 许可证
 
 [MIT](LICENSE)

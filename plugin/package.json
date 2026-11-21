@@ -1,0 +1,13 @@
+{
+  "name": "dsh-swarm-console",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Run one external agent from DSH, with a visible gate (WIP).",
+  "engines": { "node": ">=20.3" },
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": ["index.js", "cordis.patch.yml", "locale", "docs", "test"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

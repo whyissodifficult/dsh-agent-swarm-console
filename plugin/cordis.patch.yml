@@ -1,0 +1,6 @@
+- insert:
+    - id: swarm-console
+      name: dsh-swarm-console
+      config:
+        externalAgents: {}
+        capabilityRouting: true
