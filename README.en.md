@@ -59,6 +59,6 @@ DeepSeek is the default reasoning workhorse; other providers serve as specialist
 
 ## Author
 
-Zhiyang Zheng (Walk in the white) · Electrical Engineering, Linyi University · 2026
+Zhiyang Zheng (Walk in the white) · 2026
 
 A freshman who believes an AI team should be as visible and manageable as a real one.
