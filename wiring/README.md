@@ -75,3 +75,34 @@ npm run wiring:test
 - 补丁基于上游 `dd67b64`。目标若已手工改过 `lib/index.js`，`git apply` 会失败并保留原文件（不会半途写入）。
 - 接线只用 `externalAgents` 里声明的环境变量名取令牌；配置里不存令牌。
 - 低版本 DSH：没有 `ctx.subagents` 时原生分支仍会报 `subagent service unavailable`；配了 `externalAgents` 就绕开它，所以这种情况下必须配至少一个外部 agent。
+
+## 获取上游（必读）
+
+补丁基于 `dd67b64bdfb1e04ac4dcbf201d0af20d9879f847`（树哈希 `a767b6aa3b192b9684941a7760ce3a1576afda85`）。先拿到这个 commit 的副本，再装补丁：
+
+```bash
+# 公开上游（实测存在，HEAD 就是 dd67b64）
+git clone https://github.com/xieshuaix/dsh-agent-swarm.git /tmp/swarm-upstream
+
+# 国内直连 github.com 常被重置，可用镜像
+git clone https://ghproxy.net/https://github.com/xieshuaix/dsh-agent-swarm.git /tmp/swarm-upstream
+
+# 装之前先验：不可达 / commit 不符 / 可应用
+node wiring/verify-upstream.mjs /tmp/swarm-upstream
+# 也可传 URL 只验可达性与 commit：
+node wiring/verify-upstream.mjs https://github.com/xieshuaix/dsh-agent-swarm.git
+```
+
+`verify-upstream.mjs` 三种诊断分开报，退出码区分：A 不可达=1、B commit 不符=2、C 不可应用=3、可应用=0。它不会碰你的原文件，只在临时副本上 `git apply --check`。
+
+若上游转私有或拿不到该 commit：**需自备含 `dd67b64` 的上游副本**，并用 `verify-upstream.mjs` 校验通过后再装；不要把"clone 即可装"当成前提。本仓库自带 `wiring/fixtures/index.baseline.js`（该 commit 的 `lib/index.js`），可在无上游时单独跑补丁 dry-run：
+
+```bash
+npm run wiring:test   # 其中第④组就是 git apply --check 的真实验证
+```
+
+## 已知限制
+
+- **R-c（评审记档，本轮不改）**：`spawnExternal` 上层有 30 分钟 `AbortSignal.timeout`，适配器内部有 120 秒 fetch 超时（可由 `SWARM_TIMEOUT_MS` 覆盖）；两层超时叠加且上层写死。需要长任务时上层会先掐断。下轮考虑只留一层或让上层也读 `SWARM_TIMEOUT_MS`。
+- **R-b（评审记档，本轮不改）**：`settleAgent` 用 spawn 时捕获的对象，persist 用 `load()` 出的新对象；若两者不是同一引用，settle 结果可能丢。代码里已加 `// TODO(review)`，正解是统一"load → 改 → persist"。
+

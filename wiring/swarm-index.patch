@@ -1,5 +1,5 @@
 diff --git a/lib/index.js b/lib/index.js
-index 0832b04..b119ac6 100644
+index 0832b04..4500d47 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -29,6 +29,8 @@ import {
@@ -26,7 +26,7 @@ index 0832b04..b119ac6 100644
      // Default model / reasoning effort for spawned subagents (the main agent can
      // override per-spawn via the spec, deciding by task difficulty and nature).
      model: typeof config.model === "string" && config.model !== "" ? config.model : null,
-@@ -1158,16 +1168,176 @@ function apply(ctx, config = {}) {
+@@ -1158,16 +1168,182 @@ function apply(ctx, config = {}) {
    // Real subagent spawning over ctx.subagents
    // ---------------------------------------------------------------------------
  
@@ -157,6 +157,10 @@ index 0832b04..b119ac6 100644
 +    if (entry !== undefined) entry.childId = run.id;
 +    save();
 +
++    // TODO(review): R-b —— settleAgent 用的是 spawn 时捕获的 swarm 对象，
++    // persist 用的是 load() 出来的新对象。若两者不是同一引用，settle 结果会丢；
++    // catch 分支反过来 persist 旧对象，可能覆盖并发写入。
++    // 正解是统一「load → 改 → persist」。本轮按评审要求不改逻辑，留待下轮。
 +    const done = run.result
 +      .then((result) => {
 +        settleAgent(swarm, agentId, result.stopReason === "completed");
@@ -187,10 +191,10 @@ index 0832b04..b119ac6 100644
    /** Spawn one subagent (one-shot) and track it in the roster. */
    const spawn = async (session, spec) => {
      if (session === undefined) return { ok: false, error: "no_active_session" };
-+    const parent = agentForSession(ctx, session.id);
-+    if (parent === undefined) return { ok: false, error: "no live agent for session" };
 +
 +    // ── 外部 agent 分支：本次 spawn 走适配器调国内 API ──
++    // R-a: parent 检查只在原生分支里做。外部路径不依赖活跃 parent，
++    // 否则恢复会话 / parent 未注册时本该由外部 agent 救场的场景会被堵死。
 +    const externalProfile = pickExternalProfile(spec, cfg);
 +    if (externalProfile !== undefined) {
 +      return spawnExternal(session, spec, externalProfile);
@@ -200,8 +204,8 @@ index 0832b04..b119ac6 100644
      if (subagents === undefined || typeof subagents.start !== "function") {
        return { ok: false, error: "subagent service unavailable" };
      }
--    const parent = agentForSession(ctx, session.id);
--    if (parent === undefined) return { ok: false, error: "no live agent for session" };
+     const parent = agentForSession(ctx, session.id);
+     if (parent === undefined) return { ok: false, error: "no live agent for session" };
 -
      const provider = cfg.providers.length > 0 ? cfg.providers[0] : defaultProvider(subagents);
      if (subagents.getProvider(provider) === undefined) {

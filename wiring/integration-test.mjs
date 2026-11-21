@@ -11,6 +11,7 @@
  */
 // 测试文件与 external-agent-adapter.js 同目录（本仓库 wiring/；装好后插件 lib/）
 import { createAdapterRun } from './external-agent-adapter.js'
+import { dryRunPatch } from './patch-dryrun.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c, x = '') => { c ? (pass++, console.log(`  ✅ ${n}`)) : (fail++, console.log(`  ❌ ${n} ${x}`)) }
@@ -116,6 +117,13 @@ const withPlan = patches.find((p) => Array.isArray(p.plan))
 ok('plan 已写入', withPlan !== undefined)
 ok('plan 状态由 TODO 回填', withPlan !== undefined && withPlan.plan.some((p) => p.status === 'done') && withPlan.plan.some((p) => p.status !== 'done'))
 ok('logs 已写入', patches.some((p) => Array.isArray(p.logs)))
+
+console.log('\n=== ④ 补丁真实性（dry-run，不测复制品）===')
+{
+  const r = dryRunPatch()
+  ok('git apply --check 命中 hunk', r.ok, r.problems.join('; '))
+  ok('spawnExternal 恰好 2 处', r.stats?.spawnExternal === 2, `实际 ${r.stats?.spawnExternal}`)
+}
 
 console.log(`\n${'='.repeat(40)}\n  通过 ${pass}/${pass + fail}${fail ? `  失败 ${fail}` : '  全部通过 ✅'}\n${'='.repeat(40)}\n`)
 process.exit(fail > 0 ? 1 : 0)
