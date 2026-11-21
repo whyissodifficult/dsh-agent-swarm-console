@@ -11,7 +11,8 @@
 | `integration-test.mjs` | 离线集成测试（mock fetch，不打真 API）：路由规则 + run 契约 + 事件流 + 产物落 roster |
 | `install.mjs` | 一键安装：校验目标 → 备份 → 打补丁 → 装新版适配器 → 放测试。幂等 |
 | `sandbox-spawn.mjs` | 沙箱安全的子进程调用：pipe EPERM → fd 重定向 → inherit，区分 EPERM/ENOENT |
-| `sandbox-spawn.test.mjs` | 降级路径单测（注入 mock spawn，14 项），进 `npm run wiring:test` |
+| `sandbox-spawn.test.mjs` | 降级路径单测（注入 mock spawn + 强制开关端到端，21 项），进 `npm run wiring:test` |
+| `f2-counterproof.mjs` | F2 反证：造"能 apply 但语法坏"的补丁，证明 node --check 会变红 |
 | `verify-upstream.mjs` | 上游校验：不可达 / commit 不符 / 可应用，三诊断分开 |
 | `fixtures/index.baseline.js` | `dd67b64` 的 `lib/index.js` 独立基线，供补丁 dry-run 反证 |
 
@@ -109,5 +110,6 @@ npm run wiring:test   # 其中第④组就是 git apply --check 的真实验证
 
 - **R-c（评审记档，本轮不改）**：`spawnExternal` 上层有 30 分钟 `AbortSignal.timeout`，适配器内部有 120 秒 fetch 超时（可由 `SWARM_TIMEOUT_MS` 覆盖）；两层超时叠加且上层写死。需要长任务时上层会先掐断。下轮考虑只留一层或让上层也读 `SWARM_TIMEOUT_MS`。
 - **R-b（评审记档，本轮不改）**：`settleAgent` 用 spawn 时捕获的对象，persist 用 `load()` 出的新对象；若两者不是同一引用，settle 结果可能丢。代码里已加 `// TODO(review)`，正解是统一"load → 改 → persist"。
-- **沙箱管道（已修）**：DSH 沙箱内 `spawnSync` 用 pipe 会 EPERM。统一走 `sandbox-spawn.mjs`：pipe → fd 重定向 → inherit 三级降级，错误区分 EPERM（沙箱）与 ENOENT（真没装 git），不再误报"未找到 git"。
+- **沙箱管道（已修）**：DSH 沙箱内 `spawnSync` 用 pipe 会 EPERM。统一走 `sandbox-spawn.mjs`：pipe → fd 重定向 → inherit 三级降级，错误区分 EPERM（沙箱）与 ENOENT（真没装 git），不再误报"未找到 git"。想端到端验证 fd 分支（宿主终端）：`WIRING_FORCE_SPAWN_EPERM=1 npm run wiring:test`，强制首跳构造 EPERM，真进程真文件走 fd 并捕获 git version。
+- **补丁语法门禁**：`patch-dryrun.mjs` 在 apply 后对打完补丁的 `lib/index.js` 跑 `node --check`，堵"补丁能打上但语法坏"；`f2-counterproof.mjs` 用能 apply 的坏语法补丁做反证。
 

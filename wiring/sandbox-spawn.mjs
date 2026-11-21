@@ -17,12 +17,18 @@ import { mkdtempSync, openSync, closeSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const FORCE_EPERM = 'WIRING_FORCE_SPAWN_EPERM'
+
 export function makeSafeSpawn(spawn = nodeSpawnSync) {
   return function safeSpawn(cmd, args, opts = {}) {
     const { timeout } = opts
 
-    // 1) 正常 pipe
-    const first = spawn(cmd, args, { ...opts, encoding: 'utf8' })
+    // 1) 正常 pipe。强制模式下首跳不真 spawn，直接构造 EPERM 进入 fd 分支，
+    //    让 fd 路径能在宿主终端端到端真跑一次（用于验证"fd 能捕获输出"）。
+    const force = process.env[FORCE_EPERM] === '1'
+    const first = force
+      ? { status: null, error: Object.assign(new Error('forced EPERM'), { code: 'EPERM' }) }
+      : spawn(cmd, args, { ...opts, encoding: 'utf8' })
     if (first.error?.code !== 'EPERM') {
       return {
         status: first.status,
@@ -34,43 +40,48 @@ export function makeSafeSpawn(spawn = nodeSpawnSync) {
       }
     }
 
-    // 2) fd 重定向（绕开管道，仍能捕获输出）
-    const dir = mkdtempSync(join(tmpdir(), 'wiring-spawn-'))
+    // 2) fd 重定向（绕开管道，仍能捕获输出）。
+    //    openSync / mkdtempSync 失败也算 fd 不可用，要落到 inherit 兜底。
+    let dir
+    let outFd
+    let errFd
+    let second
     try {
-      const outPath = join(dir, 'out')
-      const errPath = join(dir, 'err')
-      const outFd = openSync(outPath, 'w')
-      const errFd = openSync(errPath, 'w')
-      let second
-      try {
-        second = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, timeout, stdio: ['ignore', outFd, errFd] })
-      } finally {
-        closeSync(outFd)
-        closeSync(errFd)
-      }
-      if (!second.error) {
-        return {
-          status: second.status,
-          stdout: readFileSync(outPath, 'utf8'),
-          stderr: readFileSync(errPath, 'utf8'),
-          error: null,
-          mode: 'fd',
-          note: '沙箱禁止管道，已用文件描述符重定向捕获输出',
-        }
-      }
-
-      // 3) inherit 兜底（只判断 status，拿不到输出）
-      const third = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, timeout, stdio: 'inherit' })
-      return {
-        status: third.status,
-        stdout: '',
-        stderr: '',
-        error: third.error ?? null,
-        mode: 'inherit',
-        note: '沙箱禁止管道与文件重定向，已降级为 inherit（无法捕获输出）',
-      }
+      dir = mkdtempSync(join(tmpdir(), 'wiring-spawn-'))
+      outFd = openSync(join(dir, 'out'), 'w')
+      errFd = openSync(join(dir, 'err'), 'w')
+      second = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, timeout, stdio: ['ignore', outFd, errFd] })
+    } catch (fdError) {
+      second = { status: null, error: fdError }
     } finally {
+      for (const fd of [outFd, errFd]) {
+        if (fd !== undefined) { try { closeSync(fd) } catch { /* ignore */ } }
+      }
+    }
+    if (!second.error) {
+      const out = readFileSync(join(dir, 'out'), 'utf8')
+      const err = readFileSync(join(dir, 'err'), 'utf8')
       try { rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+      return {
+        status: second.status,
+        stdout: out,
+        stderr: err,
+        error: null,
+        mode: 'fd',
+        note: '沙箱禁止管道，已用文件描述符重定向捕获输出',
+      }
+    }
+
+    // 3) inherit 兜底（只判断 status，拿不到输出）
+    try { if (dir) rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    const third = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, timeout, stdio: 'inherit' })
+    return {
+      status: third.status,
+      stdout: '',
+      stderr: '',
+      error: third.error ?? null,
+      mode: 'inherit',
+      note: '沙箱禁止管道与文件重定向，已降级为 inherit（无法捕获输出）',
     }
   }
 }

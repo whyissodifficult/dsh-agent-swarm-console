@@ -13,10 +13,11 @@ import { fileURLToPath } from 'node:url'
 import { safeSpawn, spawnErrorText } from './sandbox-spawn.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
-const patch = join(here, 'swarm-index.patch')
-const fixture = join(here, 'fixtures', 'index.baseline.js')
+const defaultPatch = join(here, 'swarm-index.patch')
+const defaultFixture = join(here, 'fixtures', 'index.baseline.js')
 
-export function dryRunPatch() {
+// paths 可选：仅供反证测试注入临时补丁/基线；生产调用走真实文件。
+export function dryRunPatch({ patch = defaultPatch, fixture = defaultFixture } = {}) {
   const problems = []
   if (!existsSync(patch)) return { ok: false, problems: ['补丁文件不存在'], stats: null }
   if (!existsSync(fixture)) return { ok: false, problems: ['基线 fixture 不存在'], stats: null }
@@ -46,9 +47,18 @@ export function dryRunPatch() {
       problems.push('git apply 实打失败：' + spawnErrorText(apply, 'git apply'))
       return { ok: false, problems, stats: null }
     }
-    const patched = readFileSync(join(tmp, 'lib', 'index.js'), 'utf8')
+    const patchedPath = join(tmp, 'lib', 'index.js')
+    const patched = readFileSync(patchedPath, 'utf8')
+
+    // F2: 语法校验——补丁能打上不代表语法没坏。与 install.mjs 的 node --check 对齐门禁强度。
+    const syntax = safeSpawn(process.execPath, ['--check', patchedPath])
+    if (syntax.status !== 0) {
+      problems.push('打补丁后 node --check 失败（语法被破坏）：' + spawnErrorText(syntax, 'node --check'))
+      return { ok: false, problems, stats: null }
+    }
+
     const nSpawn = (patched.match(/spawnExternal/g) || []).length
-    const stats = { spawnExternal: nSpawn }
+    const stats = { spawnExternal: nSpawn, syntax: 'ok' }
     if (nSpawn !== 2) problems.push(`spawnExternal 出现 ${nSpawn} 次，期望 2（调用处+定义处）`)
     if (!patched.includes('const externalProfile = pickExternalProfile(spec, cfg)')) {
       problems.push('spawn() 分流语句未命中')
@@ -66,7 +76,7 @@ export function dryRunPatch() {
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const r = dryRunPatch()
   if (r.ok) {
-    console.log(`✅ 补丁 dry-run 通过：hunk 命中，spawnExternal=${r.stats.spawnExternal}`)
+    console.log(`✅ 补丁 dry-run 通过：hunk 命中，node --check 通过，spawnExternal=${r.stats.spawnExternal}`)
     process.exit(0)
   }
   console.error('❌ 补丁 dry-run 失败：')

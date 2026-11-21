@@ -10,7 +10,7 @@
   "scripts": {
     "test": "node src/selftest.mjs",
     "probe": "node probe.mjs",
-    "wiring:test": "node wiring/sandbox-spawn.test.mjs && node wiring/integration-test.mjs",
+    "wiring:test": "node wiring/sandbox-spawn.test.mjs && node wiring/integration-test.mjs && node wiring/f2-counterproof.mjs",
     "wiring:dryrun": "node wiring/patch-dryrun.mjs",
     "wiring:verify-upstream": "node wiring/verify-upstream.mjs",
     "verify:patch": "node verify-patch-config.mjs"

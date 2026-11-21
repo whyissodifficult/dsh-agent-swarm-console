@@ -123,6 +123,7 @@ console.log('\n=== ④ 补丁真实性（dry-run，不测复制品）===')
   const r = dryRunPatch()
   ok('git apply --check 命中 hunk', r.ok, r.problems.join('; '))
   ok('spawnExternal 恰好 2 处', r.stats?.spawnExternal === 2, `实际 ${r.stats?.spawnExternal}`)
+  ok('node --check 通过', r.stats?.syntax === 'ok', `实际 ${r.stats?.syntax}`)
 }
 
 console.log(`\n${'='.repeat(40)}\n  通过 ${pass}/${pass + fail}${fail ? `  失败 ${fail}` : '  全部通过 ✅'}\n${'='.repeat(40)}\n`)
