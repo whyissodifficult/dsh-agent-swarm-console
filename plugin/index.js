@@ -3,9 +3,10 @@
  * 只做一件事：把一个任务交给一个外部 agent 执行一次，返回 stopReason / text / ms。
  * 画布与交付门禁尚未实现（见 docs/DETAIL.md）。
  *
- * 复用 src/external-agent-adapter.js 的 callChat —— 不复制第二份适配逻辑。
+ * 复用 plugin/lib/adapter.js 的 callChat —— 唯一实现在包内，不复制第二份。
+ * src/external-agent-adapter.js 是反向 re-export 的兼容 shim。
  */
-import { callChat } from '../src/external-agent-adapter.js'
+import { callChat } from './lib/adapter.js'
 
 export const inject = ['tools']
 

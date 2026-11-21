@@ -13,6 +13,8 @@
     "wiring:test": "node wiring/sandbox-spawn.test.mjs && node wiring/integration-test.mjs && node wiring/f2-counterproof.mjs",
     "wiring:dryrun": "node wiring/patch-dryrun.mjs",
     "wiring:verify-upstream": "node wiring/verify-upstream.mjs",
+    "plugin:smoke": "node plugin/test/smoke.mjs",
+    "plugin:pack": "node plugin/test/pack.mjs",
     "verify:patch": "node verify-patch-config.mjs"
   },
   "devDependencies": {
