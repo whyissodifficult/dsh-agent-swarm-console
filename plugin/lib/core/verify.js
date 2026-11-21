@@ -32,7 +32,11 @@ export function verifyRun({ contractId, evidenceInput, runPolicy }, store = cont
     const ev = makeEvidence({ contractId })
     const hash = evidenceHash(ev)
     runStore.set(contractId, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash })
-    return { decision: d.decision, reasons: d.reasons, evidenceHash: hash, reproCmd: d.reproCmd }
+    return {
+      decision: d.decision, reasons: d.reasons, evidenceHash: hash,
+      missing: d.missing,
+      ...(d.reproCmd ? { reproCmd: d.reproCmd } : {}),
+    }
   }
 
   const evidence = typeof runPolicy === 'function'
@@ -46,6 +50,7 @@ export function verifyRun({ contractId, evidenceInput, runPolicy }, store = cont
     decision: d.decision,
     reasons: d.reasons,
     evidenceHash: hash,
+    missing: d.missing,
     ...(d.reproCmd ? { reproCmd: d.reproCmd } : {}),
   }
 }

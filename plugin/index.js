@@ -107,7 +107,45 @@ export function apply(ctx, config) {
   }))
 
   registerVerifyTools(ctx)
+  // 顺序：先注册 skill，再注册卡片种类。两者都各自降级，任一失败都不阻塞 verify_* 三工具。
+  registerGateSkill(ctx)
   registerGateCard(ctx)
+}
+
+/**
+ * 必改1 · 注册运行期 skill，让门禁卡的 propose_action 可用。
+ * DSH action-cards 的规则：根 Agent 必须先加载该种类声明的 Skill，propose_action 才会出现。
+ * 宿主无 skills 服务或注册失败时静默跳过（只影响卡片，不影响三工具）。
+ */
+const GATE_SKILL_NAME = 'dsh-swarm-console-verify'
+const GATE_SKILL_CONTENT = [
+  '# Swarm Console 门禁',
+  '',
+  '当你需要把任务契约冻结、跑证据校验、或让用户对门禁结论做放行决定时使用本 skill。',
+  '流程：verify_contract → verify_run → verify_status；结论为 GREEN/YELLOW/RED。',
+  '',
+  '- 先调用 verify_contract 冻结目标与验收条件，拿到 contractId。',
+  '- 再调用 verify_run 得到判定。RED 的复现命令会随输出给出，可复制执行。',
+  '- 需要用户决定时，用 propose_action 提议门禁卡（action: dsh-swarm-console/gate）。',
+  '- approve = 用户放行，仅在 GREEN 时允许；非 GREEN 不得 approve，应 retry。',
+  '- retry = 重跑校验并刷新卡片；只有用户可以操作卡片，agent 代批会被拒绝。',
+  '',
+  '不要用本 skill 承诺画布或多阶段状态机（尚未实现）。',
+].join('\n')
+
+function registerGateSkill(ctx) {
+  try {
+    const skills = typeof ctx.get === 'function' ? ctx.get('skills') : undefined
+    if (!skills || typeof skills.register !== 'function') return
+    ctx.effect(() => skills.register({
+      name: GATE_SKILL_NAME,
+      description: 'Swarm Console 交付门禁：冻结契约、跑证据校验、由用户 approve/retry。',
+      content: GATE_SKILL_CONTENT,
+      invocation: { modelInvocable: true, userInvocable: true },
+    }))
+  } catch {
+    // skill 注册失败不得阻塞 verify_* 三工具（评审硬约束）
+  }
 }
 
 /** D5 · 三个 verify 工具。核心逻辑在 lib/core/verify.js，这里只做薄封装。 */
@@ -159,11 +197,23 @@ function registerVerifyTools(ctx) {
         schema: {
           type: 'object',
           properties: {
-            decision: { type: 'string' }, reasons: { type: 'array', items: { type: 'string' } }, evidenceHash: { type: 'string' },
+            decision: { type: 'string' }, reasons: { type: 'array', items: { type: 'string' } },
+            evidenceHash: { type: 'string' }, reproCmd: { type: 'string' },
+            missing: { type: 'array', items: { type: 'string' } },
           },
           required: ['decision', 'reasons', 'evidenceHash'],
         },
-        render: (args, v) => [{ type: 'text', text: `门禁 ${v.decision}：${v.reasons.join('；')}` }],
+        render: (args, v) => {
+          const lines = [`门禁 ${v.decision}：${v.reasons.join('；')}`]
+          // 必改2：RED 必带可复制复现命令；YELLOW 附缺失证据摘要
+          if (v.decision === 'RED') {
+            lines.push(v.reproCmd ? `复现：${v.reproCmd}` : '复现：未提供命令（异常）')
+          }
+          if (v.decision === 'YELLOW' && Array.isArray(v.missing) && v.missing.length > 0) {
+            lines.push(`缺失证据：${v.missing.join('；')}`)
+          }
+          return [{ type: 'text', text: lines.join('\n') }]
+        },
       },
       execute: async (args, exec) => {
         // D4: diff 取宿主 workspaceChanges，不自建 diff
@@ -217,7 +267,7 @@ function registerGateCard(ctx) {
 
   ctx.effect(() => cards.register({
     action: 'dsh-swarm-console/gate',
-    skill: 'dsh-swarm-console-verify',
+    skill: GATE_SKILL_NAME,
     invitation: '验收结论已出。请查看门禁卡片并选择 approve 放行或 retry 重跑。',
     details,
     verbs: { approve: { writes: true }, retry: { writes: true } },

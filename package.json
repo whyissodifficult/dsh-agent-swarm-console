@@ -15,7 +15,7 @@
     "wiring:verify-upstream": "node wiring/verify-upstream.mjs",
     "plugin:smoke": "node plugin/test/smoke.mjs",
     "plugin:pack": "node plugin/test/pack.mjs",
-    "plugin:test": "node --test plugin/test/core.test.mjs plugin/test/verify.test.mjs",
+    "plugin:test": "node --test plugin/test/core.test.mjs plugin/test/verify.test.mjs plugin/test/gate-skill.test.mjs",
     "gate": "npm run probe && npm test && npm run plugin:test && npm run plugin:smoke && npm run plugin:pack && npm run wiring:test && npm run wiring:dryrun",
     "verify:patch": "node verify-patch-config.mjs"
   },
