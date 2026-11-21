@@ -63,6 +63,7 @@ export function decide(contract, evidence) {
 /** 从失败 check 构造可复制执行的最小复现命令。 */
 function reproFor(check) {
   if (typeof check.cmd === 'string' && check.cmd.trim() !== '') return check.cmd
-  // 没有 cmd 时给一条明确可执行的占位，而不是空字符串 —— H2 要求 reproCmd 非空
-  return `# 复现 check ${check.id}: 运行对应命令并观察退出码（该 check 未提供 cmd）`
+  // H2 兜底（正常路径下 exec 缺 cmd 已在 evidence 层被拒，见 normalizeChecks）：
+  // 给一条 sh -c 可直接执行且退出非 0 的真命令，不是装饰性注释。
+  return `echo "check ${check.id} 未提供 cmd" && exit 1`
 }

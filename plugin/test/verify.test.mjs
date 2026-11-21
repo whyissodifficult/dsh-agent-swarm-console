@@ -71,6 +71,13 @@ test('H3 正向: 在线根用户放行不被拒', () => {
   assert.equal(events.length, 0)
 })
 
+test('verify_status: 未知 contractId 返回 known:false（不落三态）', () => {
+  const { contracts, runs } = newStores()
+  const s = verifyStatus({ contractId: 'unknown' }, runs)
+  assert.deepEqual(s, { known: false })
+  assert.ok(!('decision' in s), '未知契约不应返回 decision')
+})
+
 test('H1: 无 evidence 的 contract 不判 GREEN', () => {
   const { contracts, runs } = newStores()
   const { contractId } = verifyContract({

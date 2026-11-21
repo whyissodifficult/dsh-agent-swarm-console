@@ -36,9 +36,19 @@ capabilityRouting: true
 
 `stopReason='cancelled'` 表示调用被取消（`exec.signal` 触发），不抛异常。
 
+## verify v1 三工具（实验性）
+
+- `verify_contract({objective, constraints, criteria})` → `{contractId}`，契约内容冻结成 12 位 id
+- `verify_run({contractId, checks})` → `{decision: 'GREEN'|'YELLOW'|'RED', reasons, evidenceHash, reproCmd?}`
+- `verify_status({contractId})` → 有记录时 `{known:true, decision, at}`；未知契约 `{known:false}`（不返回三态值）
+
+三态规则：缺证据 YELLOW；任一 check 失败 RED（必带可复制执行的 `reproCmd`）；全部有证据且通过 GREEN。放行只能由用户通过门禁卡触发。
+
 ## 已知限制
 
 - 还没有画布 —— 看不到 agent 节点、连线或过程可视化
-- 没有交付门禁 —— 不校验 evidence，不做 verified/unverified 判定
+- 交付门禁为 v1 实验：证据存**进程内 Map**，DSH 重启即丢，不做持久化
+- 本插件以 **link 方式**装进当前 profile；新增的 `verify_*` 工具需**重启 DSH** 才会注册，未重启时宿主只看到 `swarm_run`
+- 门禁卡 GUI 截图与 approve/retry 事件流：当前为**未验证项**，待宿主重启后补
 - 图标未提供 —— 当前回落 DSH 默认图标
-- 只支持一次调用，不支持多轮对话或子 agent 编排
+- `swarm_run` 只支持一次调用，不支持多轮对话或子 agent 编排

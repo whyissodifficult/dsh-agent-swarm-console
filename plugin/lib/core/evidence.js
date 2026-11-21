@@ -84,6 +84,10 @@ function normalizeChecks(value) {
     if (typeof c.id !== 'string' || c.id === '') throw new Error(`checks[${i}].id 必填`)
     if (typeof c.type !== 'string' || c.type === '') throw new Error(`checks[${i}].type 必填`)
     if (typeof c.ok !== 'boolean') throw new Error(`checks[${i}].ok 必须是布尔`)
+    // exec 类 check 必须有可执行 cmd —— 缺 cmd 的失败无法复现，H2 要求策略层就拒绝。
+    if (c.type === 'exec' && c.ok === false && (typeof c.cmd !== 'string' || c.cmd.trim() === '')) {
+      throw new Error(`checks[${i}] exec 类失败 check 必须提供可执行 cmd（H2 reproCmd）`)
+    }
     const out = { id: c.id, type: c.type, ok: c.ok }
     for (const k of ['detail', 'exitCode', 'cmd']) if (c[k] !== undefined) out[k] = c[k]
     return out

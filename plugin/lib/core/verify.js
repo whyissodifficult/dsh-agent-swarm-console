@@ -53,8 +53,9 @@ export function verifyRun({ contractId, evidenceInput, runPolicy }, store = cont
 /** verify_status：最近一次 decision 与时间。 */
 export function verifyStatus({ contractId }, runStore = runs) {
   const r = runStore.get(contractId)
-  if (!r) return { decision: 'NONE', at: null }
-  return { decision: r.decision, at: r.at }
+  // 未知契约返回 known:false，不落进 GREEN/YELLOW/RED 三态（评审必改3）
+  if (!r) return { known: false }
+  return { known: true, decision: r.decision, at: r.at }
 }
 
 /**

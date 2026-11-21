@@ -185,10 +185,13 @@ function registerVerifyTools(ctx) {
       output: {
         schema: {
           type: 'object',
-          properties: { decision: { type: 'string' }, at: { type: 'string' } },
-          required: ['decision'],
+          properties: { known: { type: 'boolean' }, decision: { type: 'string' }, at: { type: 'string' } },
+          required: ['known'],
         },
-        render: (args, v) => [{ type: 'text', text: `最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}` }],
+        render: (args, v) => [{
+          type: 'text',
+          text: v.known ? `最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}` : '未知 contractId，尚无门禁记录',
+        }],
       },
       execute: async (args) => verifyStatus({ contractId: args.contractId }),
     },

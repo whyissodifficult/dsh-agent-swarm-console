@@ -4,6 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
@@ -88,9 +89,27 @@ test('gate: R2 check 失败 → RED 且 reproCmd 非空', () => {
   assert.ok(d.reproCmd && d.reproCmd.length > 0)
   assert.ok(d.reasons.some((r) => r.includes('npm test')))
 })
+test('H2: reproCmd 可被 sh -c 执行且退出非 0（非注释行）', () => {
+  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
+  // 非 exec 类型失败 check 无 cmd 是合法的，触发 gate 的 reproCmd 兜底
+  const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false }] })
+  const d = decide(c, e)
+  assert.equal(d.decision, 'RED')
+  assert.ok(d.reproCmd && d.reproCmd.trim().length > 0)
+  assert.ok(!d.reproCmd.trim().startsWith('#'), 'reproCmd 不能是注释')
+  const r = spawnSync('sh', ['-c', d.reproCmd], { encoding: 'utf8' })
+  assert.notEqual(r.status, 0, `reproCmd 应退出非 0，实际 ${r.status}`)
+})
+test('H2: exec 失败 check 缺 cmd 在 evidence 层被拒（策略非法）', () => {
+  assert.throws(
+    () => makeEvidence({ contractId: 'x', checks: [{ id: 'k1', type: 'exec', ok: false }] }),
+    /cmd/,
+  )
+})
+
 test('gate: R2 失败优先于 R1 缺证据', () => {
   const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: [] }, { id: 'AC2', text: 'u', checkIds: ['k'] }] })
-  const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'exec', ok: false }] })
+  const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'file.exists', ok: false }] })
   assert.equal(decide(c, e).decision, 'RED')
 })
 
