@@ -13,14 +13,18 @@ const cfg = {
 
 function fakeCtx(services = {}) {
   const registered = { tools: new Map(), skills: [], cards: [] }
-  return {
-    ctx: {
-      effect: (fn) => fn(),
-      get: (name) => services[name],
-      tools: { register: (d) => { registered.tools.set(d.name, d); return () => {} } },
-    },
-    registered,
+  const base = {
+    effect: (fn) => fn(),
+    get: (name) => services[name],
+    tools: { register: (d) => { registered.tools.set(d.name, d); return () => {} } },
   }
+  // 模拟宿主 inject：服务已在 services 里时，回调拿到含该服务的子 ctx 并立即触发
+  base.inject = (names, cb) => {
+    const sub = { ...base }
+    for (const n of names) if (services[n] !== undefined) sub[n] = services[n]
+    if (names.every((n) => sub[n] !== undefined)) cb(sub)
+  }
+  return { ctx: base, registered }
 }
 
 test('必改1: 注册了 dsh-swarm-console-verify skill，invocation 可模型调用', () => {
@@ -32,6 +36,26 @@ test('必改1: 注册了 dsh-swarm-console-verify skill，invocation 可模型�
   assert.equal(captured.name, 'dsh-swarm-console-verify')
   assert.equal(captured.invocation.modelInvocable, true)
   assert.equal(captured.invocation.userInvocable, true)
+})
+
+test('时机: 服务缺席时 apply 不抛，服务出现后 register 被调用（ctx.inject）', () => {
+  const pending = []
+  let skillsReg = 0, cardsReg = 0
+  const ctx = {
+    effect: (fn) => fn(),
+    get: () => undefined, // apply 阶段取不到任何服务
+    inject: (names, cb) => pending.push({ names, cb }),
+    tools: { register: () => () => {} },
+  }
+  assert.doesNotThrow(() => apply(ctx, cfg))
+  assert.ok(pending.length >= 2, '应通过 inject 等待 skills 与 actionCards')
+
+  // 模拟两个 bundle 晚挂载：把服务放进 ctx，触发之前登记的回调
+  ctx.skills = { register: () => { skillsReg++; return () => {} } }
+  ctx.actionCards = { register: () => { cardsReg++; return () => {} } }
+  for (const p of pending) p.cb(ctx)
+  assert.equal(skillsReg, 1, 'skills 出现后应注册')
+  assert.equal(cardsReg, 1, 'actionCards 出现后应注册')
 })
 
 test('必改1补: source 为非空字符串且为 runtime（缺它 skill 加载失败）', () => {

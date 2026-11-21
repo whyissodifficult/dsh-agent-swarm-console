@@ -134,18 +134,27 @@ const GATE_SKILL_CONTENT = [
 ].join('\n')
 
 function registerGateSkill(ctx) {
+  // 可选服务走 inject：apply 阶段同步 get 时，晚挂载的服务还没就绪。
+  // 服务缺席时 inject 不触发回调，不抛错，verify_* 三工具照常注册。
   try {
-    const skills = typeof ctx.get === 'function' ? ctx.get('skills') : undefined
-    if (!skills || typeof skills.register !== 'function') return
-    ctx.effect(() => skills.register({
-      name: GATE_SKILL_NAME,
-      description: 'Swarm Console 交付门禁：冻结契约、跑证据校验、由用户 approve/retry。',
-      content: GATE_SKILL_CONTENT,
-      source: 'runtime', // SkillRegistration 必填；缺它 skill 能注册但加载失败
-      invocation: { modelInvocable: true, userInvocable: true },
-    }))
+    if (typeof ctx.inject !== 'function') return
+    ctx.inject(['skills'], (ctx) => {
+      try {
+        const skills = ctx.skills
+        if (!skills || typeof skills.register !== 'function') return
+        ctx.effect(() => skills.register({
+          name: GATE_SKILL_NAME,
+          description: 'Swarm Console 交付门禁：冻结契约、跑证据校验、由用户 approve/retry。',
+          content: GATE_SKILL_CONTENT,
+          source: 'runtime', // SkillRegistration 必填；缺它 skill 能注册但加载失败
+          invocation: { modelInvocable: true, userInvocable: true },
+        }))
+      } catch {
+        // 注册失败不阻塞三工具
+      }
+    })
   } catch {
-    // skill 注册失败不得阻塞 verify_* 三工具（评审硬约束）
+    // inject 本身失败也不阻塞
   }
 }
 
@@ -256,48 +265,52 @@ function registerVerifyTools(ctx) {
  * details 用零依赖 mini-schema 满足 safeParse 鸭子类型。
  */
 function registerGateCard(ctx) {
-  const cards = typeof ctx.get === 'function' ? ctx.get('actionCards') : undefined
-  if (!cards || typeof cards.register !== 'function') return
+  // 可选服务走 inject：actionCards 来自另一层 bundle，晚于本插件挂载，apply 时 get 取不到。
+  if (typeof ctx.inject !== 'function') return
+  ctx.inject(['actionCards'], (ctx) => {
+    const cards = ctx.actionCards
+    if (!cards || typeof cards.register !== 'function') return
 
-  const details = z.object({
-    decision: z.enum(['GREEN', 'YELLOW', 'RED']),
-    reasons: z.array(z.string()),
-    contractId: z.string({ nonempty: true }),
-    reproCmd: z.optional(z.string()),
+    const details = z.object({
+      decision: z.enum(['GREEN', 'YELLOW', 'RED']),
+      reasons: z.array(z.string()),
+      contractId: z.string({ nonempty: true }),
+      reproCmd: z.optional(z.string()),
+    })
+
+    ctx.effect(() => cards.register({
+      action: 'dsh-swarm-console/gate',
+      skill: GATE_SKILL_NAME,
+      invitation: '验收结论已出。请查看门禁卡片并选择 approve 放行或 retry 重跑。',
+      details,
+      verbs: { approve: { writes: true }, retry: { writes: true } },
+      openPhases: ['proposed', 'refused'],
+      async act(agent, proposal, verb, payload) {
+        // H3：放行只能由用户触发。非用户（subagent / 代码发起）拒绝并记事件。
+        const guard = guardCaller(agent, (a, decision) => cards.record(a, decision))
+        if (guard) return guard
+
+        const { contractId, decision } = proposal.details
+        if (verb === 'approve') {
+          if (decision !== 'GREEN') {
+            cards.record(agent, { callId: proposal.callId, action: proposal.action, phase: 'refused', data: { reason: '非 GREEN 不可放行' } })
+            return { status: 'refused', reason: '非 GREEN 不可放行' }
+          }
+          const d = { callId: proposal.callId, action: proposal.action, phase: 'approved', data: { contractId } }
+          cards.record(agent, d)
+          return { status: 'settled', decision: d }
+        }
+        if (verb === 'retry') {
+          const r = verifyRun({ contractId, evidenceInput: payload?.evidence })
+          const d = {
+            callId: proposal.callId, action: proposal.action, phase: 'proposed',
+            data: { contractId, decision: r.decision, reasons: r.reasons, ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}) },
+          }
+          cards.record(agent, d)
+          return { status: 'settled', decision: d }
+        }
+        return { status: 'refused', reason: `未知操作 ${verb}` }
+        },
+    }))
   })
-
-  ctx.effect(() => cards.register({
-    action: 'dsh-swarm-console/gate',
-    skill: GATE_SKILL_NAME,
-    invitation: '验收结论已出。请查看门禁卡片并选择 approve 放行或 retry 重跑。',
-    details,
-    verbs: { approve: { writes: true }, retry: { writes: true } },
-    openPhases: ['proposed', 'refused'],
-    async act(agent, proposal, verb, payload) {
-      // H3：放行只能由用户触发。非用户（subagent / 代码发起）拒绝并记事件。
-      const guard = guardCaller(agent, (a, decision) => cards.record(a, decision))
-      if (guard) return guard
-
-      const { contractId, decision } = proposal.details
-      if (verb === 'approve') {
-        if (decision !== 'GREEN') {
-          cards.record(agent, { callId: proposal.callId, action: proposal.action, phase: 'refused', data: { reason: '非 GREEN 不可放行' } })
-          return { status: 'refused', reason: '非 GREEN 不可放行' }
-        }
-        const d = { callId: proposal.callId, action: proposal.action, phase: 'approved', data: { contractId } }
-        cards.record(agent, d)
-        return { status: 'settled', decision: d }
-      }
-      if (verb === 'retry') {
-        const r = verifyRun({ contractId, evidenceInput: payload?.evidence })
-        const d = {
-          callId: proposal.callId, action: proposal.action, phase: 'proposed',
-          data: { contractId, decision: r.decision, reasons: r.reasons, ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}) },
-        }
-        cards.record(agent, d)
-        return { status: 'settled', decision: d }
-      }
-      return { status: 'refused', reason: `未知操作 ${verb}` }
-    },
-  }))
 }
