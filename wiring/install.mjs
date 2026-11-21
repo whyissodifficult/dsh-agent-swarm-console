@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, copyFileSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { safeSpawn, spawnErrorText } from './sandbox-spawn.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const target = process.argv[2] ? resolve(process.argv[2]) : null
@@ -37,13 +37,13 @@ if (!readFileSync(indexFile, 'utf8').includes('agent-swarm')) {
   process.exit(2)
 }
 
-// git 不可用要早说，别让后面的 apply 报空字符串
-const gitVersion = spawnSync('git', ['--version'], { encoding: 'utf8' })
+// git 可用性检查。沙箱 EPERM 会由 safeSpawn 自动降级；这里只区分真实失败。
+const gitVersion = safeSpawn('git', ['--version'])
 if (gitVersion.status !== 0) {
-  console.error('❌ 未找到 git（补丁需要 git apply）。请先安装 git 并加入 PATH。')
-  if (gitVersion.error) console.error('   ' + gitVersion.error.message)
+  console.error('❌ git 调用失败：' + spawnErrorText(gitVersion, 'git --version'))
   process.exit(1)
 }
+if (gitVersion.mode !== 'pipe') console.log(`· git 调用走了 ${gitVersion.mode} 降级（沙箱环境）`)
 
 let backupDir = null
 function ensureBackup() {
@@ -64,20 +64,19 @@ if (current.includes(INSTALL_MARK)) {
   const dir = ensureBackup()
   copyFileSync(indexFile, join(dir, 'index.js'))
   const patch = join(here, 'swarm-index.patch')
-  const r = spawnSync('git', ['apply', patch], { cwd: target, encoding: 'utf8' })
+  const r = safeSpawn('git', ['apply', patch], { cwd: target })
   if (r.status !== 0) {
-    const msg = (r.stderr || r.stdout || '').trim() || 'git apply 返回非 0（可能 git 未安装或目标不是基线 dd67b64）'
-    console.error('❌ 补丁应用失败：' + msg)
+    console.error('❌ 补丁应用失败：' + spawnErrorText(r, 'git apply'))
     console.error('   目标可能不是基线 dd67b64，或已手工改过 lib/index.js。')
     console.error('   原文件未改（备份在 ' + dir + '）')
     process.exit(1)
   }
 
   // 后置校验 1：语法
-  const syntax = spawnSync(process.execPath, ['--check', indexFile], { encoding: 'utf8' })
+  const syntax = safeSpawn(process.execPath, ['--check', indexFile])
   if (syntax.status !== 0) {
     console.error('❌ 打补丁后 node --check 失败，语法被破坏：')
-    console.error((syntax.stderr || syntax.stdout || '').trim())
+    console.error(spawnErrorText(syntax, 'node --check'))
     console.error('   备份在 ' + dir + '，可据此还原。')
     process.exit(1)
   }
@@ -111,6 +110,7 @@ if (existsSync(adapterDst)) {
 // 3) 集成测试 + dry-run 依赖放到 lib/（与适配器同目录，import 路径就能直接对上）
 copyFileSync(join(here, 'integration-test.mjs'), join(target, 'lib', 'integration-test.mjs'))
 copyFileSync(join(here, 'patch-dryrun.mjs'), join(target, 'lib', 'patch-dryrun.mjs'))
+copyFileSync(join(here, 'sandbox-spawn.mjs'), join(target, 'lib', 'sandbox-spawn.mjs'))
 copyFileSync(join(here, 'swarm-index.patch'), join(target, 'lib', 'swarm-index.patch'))
 mkdirSync(join(target, 'lib', 'fixtures'), { recursive: true })
 copyFileSync(join(here, 'fixtures', 'index.baseline.js'), join(target, 'lib', 'fixtures', 'index.baseline.js'))

@@ -13,7 +13,7 @@ import { existsSync, readFileSync, mkdtempSync, rmSync, copyFileSync, mkdirSync 
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { safeSpawn, spawnErrorText } from './sandbox-spawn.mjs'
 
 const BASELINE = 'dd67b64bdfb1e04ac4dcbf201d0af20d9879f847'
 const MIRROR = 'https://ghproxy.net/https://github.com/xieshuaix/dsh-agent-swarm.git'
@@ -25,7 +25,7 @@ if (!input) {
   process.exit(2)
 }
 
-const run = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 30000 })
+const run = (args, cwd) => safeSpawn('git', args, { cwd, timeout: 30000 })
 const isUrl = /^(https?:\/\/|git@)/i.test(input)
 const here = fileURLToPath(new URL('.', import.meta.url))
 const patch = join(here, 'swarm-index.patch')
@@ -38,7 +38,7 @@ if (isUrl) {
   const r = run(['ls-remote', input, 'HEAD'], process.cwd())
   if (r.status !== 0) {
     console.error('【诊断 A：不可达】')
-    console.error('  ' + ((r.stderr || r.stdout || '').trim() || 'git ls-remote 返回非 0'))
+    console.error('  ' + spawnErrorText(r, 'git ls-remote'))
     console.error('  提示：国内直连 github.com 常被重置，可试镜像：' + MIRROR)
     process.exit(1)
   }
@@ -94,7 +94,7 @@ try {
   for (const args of [['init', '-q'], ['config', 'user.email', 't@t'], ['config', 'user.name', 't']]) {
     const g = run(args, tmp)
     if (g.status !== 0) {
-      console.error('【诊断 C：不可应用】git 不可用：' + (g.error?.message || g.stderr || '未安装'))
+      console.error('【诊断 C：不可应用】' + spawnErrorText(g, 'git init'))
       process.exit(3)
     }
   }
@@ -103,7 +103,7 @@ try {
   const check = run(['apply', '--check', patch], tmp)
   if (check.status !== 0) {
     console.error('【诊断 C：不可应用】补丁与你的副本不匹配：')
-    console.error('  ' + ((check.stderr || check.stdout || '').trim().slice(0, 400)))
+    console.error('  ' + spawnErrorText(check, 'git apply --check'))
     process.exit(3)
   }
   console.log('【诊断 C：可应用】git apply --check 通过（在用户副本上实跑）')

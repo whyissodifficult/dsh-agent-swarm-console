@@ -10,6 +10,10 @@
 | `external-agent-adapter.js` | **过评审的新版**适配器（含 R1–R5 修复）。注意 E 盘旧克隆里那份是旧版，别用 |
 | `integration-test.mjs` | 离线集成测试（mock fetch，不打真 API）：路由规则 + run 契约 + 事件流 + 产物落 roster |
 | `install.mjs` | 一键安装：校验目标 → 备份 → 打补丁 → 装新版适配器 → 放测试。幂等 |
+| `sandbox-spawn.mjs` | 沙箱安全的子进程调用：pipe EPERM → fd 重定向 → inherit，区分 EPERM/ENOENT |
+| `sandbox-spawn.test.mjs` | 降级路径单测（注入 mock spawn，14 项），进 `npm run wiring:test` |
+| `verify-upstream.mjs` | 上游校验：不可达 / commit 不符 / 可应用，三诊断分开 |
+| `fixtures/index.baseline.js` | `dd67b64` 的 `lib/index.js` 独立基线，供补丁 dry-run 反证 |
 
 ## 用法
 
@@ -105,4 +109,5 @@ npm run wiring:test   # 其中第④组就是 git apply --check 的真实验证
 
 - **R-c（评审记档，本轮不改）**：`spawnExternal` 上层有 30 分钟 `AbortSignal.timeout`，适配器内部有 120 秒 fetch 超时（可由 `SWARM_TIMEOUT_MS` 覆盖）；两层超时叠加且上层写死。需要长任务时上层会先掐断。下轮考虑只留一层或让上层也读 `SWARM_TIMEOUT_MS`。
 - **R-b（评审记档，本轮不改）**：`settleAgent` 用 spawn 时捕获的对象，persist 用 `load()` 出的新对象；若两者不是同一引用，settle 结果可能丢。代码里已加 `// TODO(review)`，正解是统一"load → 改 → persist"。
+- **沙箱管道（已修）**：DSH 沙箱内 `spawnSync` 用 pipe 会 EPERM。统一走 `sandbox-spawn.mjs`：pipe → fd 重定向 → inherit 三级降级，错误区分 EPERM（沙箱）与 ENOENT（真没装 git），不再误报"未找到 git"。
 

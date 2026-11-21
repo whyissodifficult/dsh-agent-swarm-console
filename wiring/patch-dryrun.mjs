@@ -10,7 +10,7 @@ import { existsSync, readFileSync, copyFileSync, mkdtempSync, rmSync, mkdirSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { safeSpawn, spawnErrorText } from './sandbox-spawn.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const patch = join(here, 'swarm-index.patch')
@@ -25,25 +25,25 @@ export function dryRunPatch() {
   try {
     // git apply 要在仓库里跑；造一个最小临时仓库，只放基线文件
     for (const cmd of [['init', '-q'], ['config', 'user.email', 't@t'], ['config', 'user.name', 't']]) {
-      const r = spawnSync('git', cmd, { cwd: tmp, encoding: 'utf8' })
+      const r = safeSpawn('git', cmd, { cwd: tmp })
       if (r.status !== 0) {
-        return { ok: false, problems: ['git 不可用：' + (r.error?.message || r.stderr || '未安装')], stats: null }
+        return { ok: false, problems: ['git 调用失败：' + spawnErrorText(r, cmd.join(' '))], stats: null }
       }
     }
     mkdirSync(join(tmp, 'lib'))
     copyFileSync(fixture, join(tmp, 'lib', 'index.js'))
 
     // 1) --check：hunk 必须命中
-    const check = spawnSync('git', ['apply', '--check', patch], { cwd: tmp, encoding: 'utf8' })
+    const check = safeSpawn('git', ['apply', '--check', patch], { cwd: tmp })
     if (check.status !== 0) {
-      problems.push('git apply --check 失败（补丁与基线不匹配）：' + (check.stderr || check.stdout || '').trim().slice(0, 400))
+      problems.push('git apply --check 失败（补丁与基线不匹配）：' + spawnErrorText(check, 'git apply --check'))
       return { ok: false, problems, stats: null }
     }
 
     // 2) 真打一遍，检查结构（不是断言复制的 picker）
-    const apply = spawnSync('git', ['apply', patch], { cwd: tmp, encoding: 'utf8' })
+    const apply = safeSpawn('git', ['apply', patch], { cwd: tmp })
     if (apply.status !== 0) {
-      problems.push('git apply 实打失败：' + (apply.stderr || apply.stdout || '').trim().slice(0, 400))
+      problems.push('git apply 实打失败：' + spawnErrorText(apply, 'git apply'))
       return { ok: false, problems, stats: null }
     }
     const patched = readFileSync(join(tmp, 'lib', 'index.js'), 'utf8')
