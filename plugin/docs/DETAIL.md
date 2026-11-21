@@ -42,7 +42,13 @@ capabilityRouting: true
 - `verify_run({contractId, checks})` → `{decision: 'GREEN'|'YELLOW'|'RED', reasons, evidenceHash, reproCmd?}`
 - `verify_status({contractId})` → 有记录时 `{known:true, decision, at}`；未知契约 `{known:false}`（不返回三态值）
 
-三态规则：缺证据 YELLOW；任一 check 失败 RED（必带可复制执行的 `reproCmd`）；全部有证据且通过 GREEN。放行只能由用户通过门禁卡触发。
+三态规则：缺证据 YELLOW；任一 check 失败 RED（必带可复制执行的 `reproCmd`）；全部有证据且通过 GREEN。
+
+**放行入口（v1）**：斜杠命令 `/gate-approve <contractId>`、`/gate-retry <contractId>`、`/gate-status <contractId>`。放行只能由用户触发——斜杠命令由用户在交互界面直接输入，图中没有对应的模型工具，模型无法代替用户调用，H3（放行只能由用户触发）由这个结构保证，不依赖运行时身份判断。非 GREEN 时 `/gate-approve` 直接拒绝并提示先 retry。门禁卡（action-cards）为可选增强，仅在挂载该服务的 profile 生效。
+
+每次命令执行会在会话日志留下 `command/run` 与 `command/done` 事件，可作为放行/重试的机器证据。
+
+**`gate-retry` 语义**：用空证据重算，结果必为 YELLOW（提示补证据）；它只刷新决定时间戳，不伪造通过证据。要转 GREEN 需重新执行 `verify_run` 并提供真实证据。
 
 ## 已知限制
 

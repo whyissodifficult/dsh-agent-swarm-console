@@ -86,3 +86,41 @@ export function guardCaller(agent, record) {
 export function newStores() {
   return { contracts: new Map(), runs: new Map() }
 }
+
+// ── v1 放行入口：斜杠命令核心（宿主无关）─────────────────────────────
+// 命令只能由用户触发（斜杠命令不走模型工具），H3 由结构保证，不靠 act 守卫。
+// 状态与 verify 同源：契约在 contracts，最近决定在 runs，approved 也写回 runs。
+
+/** /gate-approve：非 GREEN 拒绝；GREEN 记 approved 返回成功。 */
+export function gateApprove({ contractId }, store = contracts, runStore = runs) {
+  if (!store.has(contractId)) return { kind: 'error', text: `未知契约 ${contractId}` }
+  const r = runStore.get(contractId)
+  if (!r) return { kind: 'error', text: '尚无门禁决定，请先执行 verify_run' }
+  if (r.decision !== 'GREEN') {
+    return { kind: 'error', text: `非 GREEN 不可放行，请先 /gate-retry ${contractId}` }
+  }
+  runStore.set(contractId, { ...r, approved: true, approvedAt: new Date().toISOString(), by: 'user' })
+  return { kind: 'success', text: `契约 ${contractId} 已由用户放行（approved）` }
+}
+
+/** /gate-retry：空证据重算 → YELLOW，刷新决定时间戳，提示补证据。 */
+export function gateRetry({ contractId }, store = contracts, runStore = runs) {
+  if (!store.has(contractId)) return { kind: 'error', text: `未知契约 ${contractId}` }
+  const r = verifyRun({ contractId, evidenceInput: undefined }, store, runStore)
+  return {
+    kind: 'success',
+    text: `契约 ${contractId} 已重算：${r.decision} @ ${verifyStatus({ contractId }, runStore).at}。需重新执行 verify_run 补证据后才可能转 GREEN。`,
+  }
+}
+
+/** /gate-status：最近决定 + 时间 + 是否 approved；未知契约 error。 */
+export function gateStatus({ contractId }, store = contracts, runStore = runs) {
+  if (!store.has(contractId)) return { kind: 'error', text: `未知契约 ${contractId}` }
+  const r = runStore.get(contractId)
+  if (!r) return { kind: 'success', text: `契约 ${contractId} 尚无门禁决定` }
+  const approved = r.approved === true
+  return {
+    kind: 'success',
+    text: `契约 ${contractId}：最近决定 ${r.decision} @ ${r.at}${approved ? `；已由 ${r.by ?? 'user'} 放行 @ ${r.approvedAt}` : '；尚未放行'}`,
+  }
+}

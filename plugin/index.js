@@ -8,7 +8,7 @@
  */
 import { callChat } from './lib/adapter.js'
 import { z } from './lib/core/mini-schema.js'
-import { verifyContract, verifyRun, verifyStatus, guardCaller } from './lib/core/verify.js'
+import { verifyContract, verifyRun, verifyStatus, guardCaller, gateApprove, gateRetry, gateStatus } from './lib/core/verify.js'
 
 export const inject = ['tools']
 
@@ -107,9 +107,45 @@ export function apply(ctx, config) {
   }))
 
   registerVerifyTools(ctx)
-  // 顺序：先注册 skill，再注册卡片种类。两者都各自降级，任一失败都不阻塞 verify_* 三工具。
+  registerGateCommands(ctx)
+  // 卡片与 skill 是可选增强（仅在挂载 action-cards 的 profile 生效）；v1 默认入口是斜杠命令。
+  // 两者都各自降级，任一失败都不阻塞 verify_* 三工具与斜杠命令。
   registerGateSkill(ctx)
   registerGateCard(ctx)
+}
+
+/**
+ * C1/C2 · 门禁放行斜杠命令（v1 默认入口，用户触发，不走模型工具）。
+ * commands 由 dsh base 自带；仍走 inject 保持挂载时机安全。
+ * 命令名 kebab-case、不带斜杠；handler 返回 {kind:'success'|'error', text}。
+ */
+function registerGateCommands(ctx) {
+  if (typeof ctx.inject !== 'function') return
+  ctx.inject(['commands'], (ctx) => {
+    const commands = ctx.commands
+    if (!commands || typeof commands.register !== 'function') return
+    const defs = [
+      {
+        name: 'gate-approve',
+        description: '放行一个已 GREEN 的门禁契约（仅用户可触发）',
+        input: { hint: '<contractId>' },
+        handler: ({ rawInput }) => gateApprove({ contractId: String(rawInput ?? '').trim() }),
+      },
+      {
+        name: 'gate-retry',
+        description: '重跑某契约的门禁校验并刷新决定',
+        input: { hint: '<contractId>' },
+        handler: ({ rawInput }) => gateRetry({ contractId: String(rawInput ?? '').trim() }),
+      },
+      {
+        name: 'gate-status',
+        description: '查看某契约的最近门禁决定与放行状态',
+        input: { hint: '<contractId>' },
+        handler: ({ rawInput }) => gateStatus({ contractId: String(rawInput ?? '').trim() }),
+      },
+    ]
+    for (const def of defs) ctx.effect(() => commands.register(def))
+  })
 }
 
 /**
@@ -265,6 +301,7 @@ function registerVerifyTools(ctx) {
  * details 用零依赖 mini-schema 满足 safeParse 鸭子类型。
  */
 function registerGateCard(ctx) {
+  // 仅在挂载 action-cards 的 profile 生效；v1 默认放行入口是斜杠命令（见 registerGateCommands）。
   // 可选服务走 inject：actionCards 来自另一层 bundle，晚于本插件挂载，apply 时 get 取不到。
   if (typeof ctx.inject !== 'function') return
   ctx.inject(['actionCards'], (ctx) => {
