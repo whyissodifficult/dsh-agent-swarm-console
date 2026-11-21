@@ -141,6 +141,7 @@ function registerGateSkill(ctx) {
       name: GATE_SKILL_NAME,
       description: 'Swarm Console 交付门禁：冻结契约、跑证据校验、由用户 approve/retry。',
       content: GATE_SKILL_CONTENT,
+      source: 'runtime', // SkillRegistration 必填；缺它 skill 能注册但加载失败
       invocation: { modelInvocable: true, userInvocable: true },
     }))
   } catch {

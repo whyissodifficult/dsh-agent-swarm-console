@@ -34,6 +34,15 @@ test('必改1: 注册了 dsh-swarm-console-verify skill，invocation 可模型�
   assert.equal(captured.invocation.userInvocable, true)
 })
 
+test('必改1补: source 为非空字符串且为 runtime（缺它 skill 加载失败）', () => {
+  let captured = null
+  const skills = { register: (s) => { captured = s; return () => {} } }
+  apply(fakeCtx({ skills }).ctx, cfg)
+  assert.equal(typeof captured.source, 'string')
+  assert.ok(captured.source.trim() !== '', 'source 不能为空')
+  assert.equal(captured.source, 'runtime')
+})
+
 test('必改1: skill content 写明 approve 仅 GREEN、retry、非用户代批拒绝', () => {
   let captured = null
   const skills = { register: (s) => { captured = s; return () => {} } }
