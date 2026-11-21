@@ -4,12 +4,20 @@
  */
 import {
   buildPrompt,
+  callChat,
   parsePlanFromOutput,
   parseTodos,
   parseResult,
   detectCapabilities,
   createAdapterRun,
 } from './external-agent-adapter.js'
+
+// 测试不需要真 key，但 callChat 会检查 env 是否存在
+process.env.DEEPSEEK_API_KEY = 'sk-test-not-real'
+
+function mkProfile() {
+  return { name: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', apiKeyEnv: 'DEEPSEEK_API_KEY', models: ['deepseek-flash'], capabilities: ['reasoning'] }
+}
 
 let pass = 0, fail = 0
 function ok(name, cond, extra = '') {
@@ -89,6 +97,7 @@ process.env.TEST_KEY = 'sk-test'
 globalThis.fetch = async () => ({
   ok: true,
   status: 200,
+  headers: { get: (k) => (k === 'content-type' ? 'text/event-stream' : null) },
   body: {
     getReader: () => {
       const bytes = new TextEncoder().encode(fakeSSE)
@@ -131,6 +140,132 @@ const run2 = createAdapterRun(
 await run2.dispose()
 const r2 = await run2.result
 ok('dispose 后不报错', r2 !== undefined)
+
+
+console.log('\n=== ⑨ P0-3: 非 SSE 的 JSON 响应 ===')
+{
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'application/json' : null) },
+    json: async () => ({ choices: [{ message: { content: '这是JSON响应' } }] }),
+  })
+  const r = await callChat({ profile: mkProfile(), prompt: 'x' })
+  ok('application/json 被正确解析', r === '这是JSON响应', `实际=${JSON.stringify(r)}`)
+}
+
+console.log('\n=== ⑩ P0-3: 不可解析的响应必须报错而非静默空串 ===')
+{
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'text/html' : null) },
+    json: async () => ({ unexpected: true }),
+  })
+  let threw = false
+  try { await callChat({ profile: mkProfile(), prompt: 'x' }) } catch (e) { threw = true }
+  ok('不可解析时抛错（不返回空串）', threw)
+}
+
+console.log('\n=== ⑪ P0-4: SSE 用 CRLF 分帧 ===')
+{
+  const crlf = 'data: {"choices":[{"delta":{"content":"A"}}]}\r\n\r\ndata: {"choices":[{"delta":{"content":"B"}}]}\r\n\r\ndata: [DONE]\r\n\r\n'
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'text/event-stream' : null) },
+    body: {
+      getReader: () => {
+        const bytes = new TextEncoder().encode(crlf)
+        let i = 0
+        return { read: async () => (i < bytes.length ? { done: false, value: bytes.slice(i, (i += bytes.length)) } : { done: true }) }
+      },
+    },
+  })
+  const r = await callChat({ profile: mkProfile(), prompt: 'x' })
+  ok('CRLF 分帧内容完整', r === 'AB', `实际=${JSON.stringify(r)}`)
+}
+
+console.log('\n=== ⑫ P1-5: 取消应归为 cancelled 而非 error ===')
+{
+  globalThis.fetch = async () => ({
+    ok: true, status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'text/event-stream' : null) },
+    body: { getReader: () => ({ read: async () => { throw new Error('The operation was aborted') } }) },
+  })
+  const run = createAdapterRun(
+    { id: 'c1', name: 'C', role: 'r', task: 't' },
+    { sessionId: 's1', agentId: 'c1', swarm, profile: mkProfile() },
+  )
+  await run.dispose()
+  const r = await run.result
+  ok('stopReason=cancelled', r.stopReason === 'cancelled', JSON.stringify(r))
+}
+
+console.log('\n=== ⑬ P1-7: 计划状态由 TODO 回填，不伪造全 done ===')
+{
+  const out = '```json\n{"plan":[{"title":"A"},{"title":"B"},{"title":"C"}]}\n```\nTODO: [done] A\nTODO: [todo] B\nTODO: [todo] C\nRESULT: done'
+  globalThis.fetch = async () => ({
+    ok: true, status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'text/event-stream' : null) },
+    body: {
+      getReader: () => {
+        const bytes = new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: out } }] }) + '\n\ndata: [DONE]\n\n')
+        let i = 0
+        return { read: async () => (i < bytes.length ? { done: false, value: bytes.slice(i, (i += bytes.length)) } : { done: true }) }
+      },
+    },
+  })
+  const patches = []
+  const swarm2 = { emitSwarmEvent: () => {}, persist: () => {}, upsertAgent: (s, a, p) => patches.push(p) }
+  const run = createAdapterRun(
+    { id: 'p1', name: 'P', role: 'r', task: 't', outlinePlan: true },
+    { sessionId: 's1', agentId: 'p1', swarm: swarm2, profile: mkProfile() },
+  )
+  await run.result
+  const withPlan = patches.find((p) => Array.isArray(p.plan))
+  const st = withPlan?.plan?.map((x) => x.status)
+  ok('3步计划只有1步done', JSON.stringify(st) === '["done","todo","todo"]', JSON.stringify(st))
+  const second = withPlan?.plan?.[1]
+  ok('未完成步骤 maxProgress 不等于100', second && second.maxProgress < 100, JSON.stringify(second))
+}
+
+console.log('\n=== ⑭ P1-8: 并发创建 runId 不重号 ===')
+{
+  const ids = new Set()
+  for (let i = 0; i < 50; i++) {
+    const r = createAdapterRun(
+      { id: 'x', name: 'X', role: 'r', task: 't' },
+      { sessionId: 's1', agentId: 'x', swarm, profile: mkProfile() },
+    )
+    ids.add(r.id)
+  }
+  ok('50次创建 50个不同id', ids.size === 50, `实际=${ids.size}`)
+}
+
+console.log('\n=== ⑮ P1-6: 进度事件不刷屏 ===')
+{
+  let count = 0
+  const swarm3 = { emitSwarmEvent: (s, t) => { if (t === 'swarm/agent/status') count++ }, persist: () => {}, upsertAgent: () => {} }
+  const chunks = 'x'.repeat(6000)
+  globalThis.fetch = async () => ({
+    ok: true, status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'text/event-stream' : null) },
+    body: {
+      getReader: () => {
+        const bytes = new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: chunks } }] }) + '\n\ndata: [DONE]\n\n')
+        let i = 0
+        return { read: async () => (i < bytes.length ? { done: false, value: bytes.slice(i, (i += bytes.length)) } : { done: true }) }
+      },
+    },
+  })
+  const run = createAdapterRun(
+    { id: 'pr1', name: 'PR', role: 'r', task: 't' },
+    { sessionId: 's1', agentId: 'pr1', swarm: swarm3, profile: mkProfile() },
+  )
+  await run.result
+  ok('status事件 < 20 条', count < 20, `实际=${count}`)
+}
 
 console.log(`\n${'=' * 40}`)
 console.log(`  通过 ${pass} / ${pass + fail}${fail ? `  失败 ${fail}` : '  全部通过 ✅'}`)

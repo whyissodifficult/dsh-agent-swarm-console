@@ -11,6 +11,11 @@
  * 用能力探测（capability detection）代替版本判断。
  */
 
+import { randomUUID } from 'node:crypto'
+
+// 进度估算：输出达到这个字符数视为 100%。纯启发式，只用于驱动 UI 的进度条。
+const PROGRESS_FULL_CHARS = 2000
+
 /**
  * Agent 画像：一个可调用的国内 agent
  * @typedef {Object} AgentProfile
@@ -83,22 +88,51 @@ export async function callChat(opts) {
   messages.push({ role: 'user', content: opts.prompt })
 
   const body = { model, messages, stream: true }
-  // DeepSeek 的 reasoning effort 走这个字段；不支持的 provider 会忽略
-  if (opts.reasoningEffort) body.reasoning_effort = opts.reasoningEffort
+  // P1-10: 严格实现的 OpenAI 兼容端点对未知字段直接 400，
+  // 所以只在 profile 显式声明 supportsReasoningEffort 时才发送。
+  if (opts.reasoningEffort && profile.supportsReasoningEffort === true) {
+    body.reasoning_effort = opts.reasoningEffort
+  }
 
-  const res = await fetch(`${profile.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
-    signal: opts.signal,
-  })
+  // P1-9: 超时 + 429/5xx 指数退避重试。
+  const url = `${profile.baseUrl.replace(/\/$/, '')}/chat/completions`
+  const TIMEOUT_MS = 120000
+  const RETRYABLE = new Set([429, 500, 502, 503, 504])
+  const MAX_RETRIES = 3
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`${profile.name} HTTP ${res.status}: ${text.slice(0, 300)}`)
+  let res
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const timeout = AbortSignal.timeout(TIMEOUT_MS)
+    const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+      signal,
+    })
+    if (res.ok) break
+    if (!RETRYABLE.has(res.status) || attempt === MAX_RETRIES) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`${profile.name} HTTP ${res.status}: ${text.slice(0, 300)}`)
+    }
+    // 指数退避：1s / 2s / 4s
+    await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
+  }
+
+  // P0-3: 非 SSE 的 200 响应不能当成空结果。
+  // 端点返回 application/json 时一行 data: 都匹配不上，旧实现会静默返回 ''，
+  // 上层据此判定 stopReason=completed —— 静默失败比报错危险得多。
+  const contentType = res.headers?.get?.('content-type') ?? ''
+  if (!contentType.includes('text/event-stream')) {
+    const json = await res.json().catch(() => null)
+    const content = json?.choices?.[0]?.message?.content
+    if (typeof content !== 'string') {
+      throw new Error(`${profile.name} 返回了不可解析的响应（content-type="${contentType}"）`)
+    }
+    return content
   }
 
   const reader = res.body && res.body.getReader ? res.body.getReader() : undefined
@@ -114,10 +148,11 @@ export async function callChat(opts) {
     const chunk = await reader.read()
     if (chunk.done) break
     buffer += decoder.decode(chunk.value, { stream: true })
-    const parts = buffer.split('\n\n')
+    // P0-4: SSE 分帧要兼容 CRLF（\r\n\r\n），否则整帧丢失。
+    const parts = buffer.split(/\r?\n\r?\n/)
     buffer = parts.pop() ?? ''
     for (const part of parts) {
-      for (const line of part.split('\n')) {
+      for (const line of part.split(/\r?\n/)) {
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
         if (!data || data === '[DONE]') continue
@@ -279,7 +314,8 @@ export function parseResult(output) {
  * @returns {import('./adapter.js').AdapterRun}
  */
 export function createAdapterRun(spec, ctx) {
-  const runId = `run-${spec.id}-${Date.now().toString(36)}`
+  // P1-8: 同毫秒并发创建会重号（Date.now().toString(36) 精度只到毫秒）。
+  const runId = `run-${spec.id}-${randomUUID().slice(0, 8)}`
   const swarm = ctx.swarm
   const sessionId = ctx.sessionId
   const agentId = ctx.agentId
@@ -322,9 +358,11 @@ export function createAdapterRun(spec, ctx) {
         signal: controller.signal,
         onChunk: (delta) => {
           buffer += delta
-          // 进度节流：变化超过 3% 才发事件，避免每个 chunk 都刷屏
-          const progress = Math.min(95, Math.round((buffer.length / 2000) * 100))
-          if (progress - lastProgress < 3 && progress < 95) return
+          // P1-6: 只在数值真的变化时发事件。
+          // 旧条件 `progress - lastProgress < 3 && progress < 95` 在 progress=95
+          // 之后恒为 false，于是每个 chunk 都发一条 —— 300 chunk = 300+ 条事件。
+          const progress = Math.min(95, Math.round((buffer.length / PROGRESS_FULL_CHARS) * 100))
+          if (progress === lastProgress) return
           lastProgress = progress
           swarm.upsertAgent(sessionId, agentId, { progress })
           swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'active', progress })
@@ -332,39 +370,74 @@ export function createAdapterRun(spec, ctx) {
       })
 
       if (aborted) {
-        swarm.upsertAgent(sessionId, agentId, { status: 'error', progress: 0 })
-        swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'error', progress: 0 })
+        swarm.upsertAgent(sessionId, agentId, { status: 'cancelled', progress: 0 })
+        swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'cancelled', progress: 0 })
         return { stopReason: 'cancelled', output: null }
       }
 
       // ── 把 agent 输出翻译成 swarm 数据层要的字段 ──
       const patch = {}
 
+      // P1-7: TODO 要在 plan 之前解析 —— 计划状态由 TODO 回填，
+      // 不能无条件写死 'done'（那等于伪造进度：模型只输出了计划、
+      // TODO 全未完成时，UI 也会显示三步全完成）。
+      const todos = parseTodos(output)
+      const doneCount = todos.filter((t) => t.done).length
+
       if (spec.outlinePlan) {
         const plan = parsePlanFromOutput(output)
         if (plan) {
+          // 三种回填策略：
+          //   条数一致   → 逐条按 t.done 决定
+          //   条数不一致 → 按完成比例，前 floor(ratio*n) 条为 done
+          //   没有 TODO  → 全部 'todo'
+          let statuses
+          if (todos.length === 0) {
+            statuses = plan.map(() => 'todo')
+          } else if (todos.length === plan.length) {
+            statuses = todos.map((t) => (t.done ? 'done' : 'todo'))
+          } else {
+            const ratio = doneCount / todos.length
+            const doneCountForPlan = Math.floor(ratio * plan.length)
+            statuses = plan.map((_, i) => (i < doneCountForPlan ? 'done' : 'todo'))
+          }
+
           const items = plan.map((p, i) => ({
             id: `${agentId}-plan-${i}`,
             title: p.title,
-            status: 'done',
+            status: statuses[i],
             ownerId: agentId,
             minProgress: Math.round((i / plan.length) * 100),
-            maxProgress: Math.round(((i + 1) / plan.length) * 100),
+            // maxProgress 与 status 一致：未完成的步骤不占满进度区间
+            maxProgress: statuses[i] === 'done'
+              ? Math.round(((i + 1) / plan.length) * 100)
+              : Math.round((i / plan.length) * 100),
           }))
           patch.plan = items
           swarm.emitSwarmEvent(sessionId, 'swarm/agent/plan', { agentId, plan: items })
         }
       }
 
-      const todos = parseTodos(output)
       if (todos.length > 0) {
         patch.todos = todos.map((t, i) => ({ id: `${agentId}-todo-${i}`, text: t.text, done: t.done }))
       }
 
-      patch.logs = [
+      // P1-11: 日志由实际发生的事生成，不提前写入"完成"结论。
+      const logs = [
         { id: `${agentId}-log-0`, type: 'action', content: `调用 ${profile.name} (${spec.model || profile.models[0]})` },
-        { id: `${agentId}-log-1`, type: 'result', content: `完成，输出 ${output.length} 字符` },
       ]
+      for (const [i, t] of todos.entries()) {
+        logs.push({
+          id: `${agentId}-log-todo-${i}`,
+          type: 'action',
+          content: `${t.done ? '已完成' : '进行中'}：${t.text}`,
+        })
+      }
+      const finalText = parseResult(output)
+      if (finalText !== undefined) {
+        logs.push({ id: `${agentId}-log-result`, type: 'result', content: finalText })
+      }
+      patch.logs = logs
 
       // 产物：P2 阶段把最终结果落成文件（swarm 靠扫描文件 + 标记归因）
       patch.artifacts = []
@@ -379,10 +452,18 @@ export function createAdapterRun(spec, ctx) {
       const finalResult = parseResult(output) || output
       return { stopReason: 'completed', output, finalOutput: finalResult }
     } catch (error) {
-      swarm.upsertAgent(sessionId, agentId, { status: 'error', progress: 0 })
+      // P1-5: 取消要归为 cancelled，不是 error。
+      // abort 会让 fetch 先抛异常直接进 catch，所以这里必须自己判，
+      // 否则 dispose 掉的任务会被记成失败（swarm 会把它算进 error 统计）。
+      const cancelled = aborted || controller.signal.aborted
+      const status = cancelled ? 'cancelled' : 'error'
+      swarm.upsertAgent(sessionId, agentId, { status, progress: 0 })
       swarm.persist(sessionId)
-      swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'error', progress: 0 })
-      return { stopReason: 'error', output: String(error?.message ?? error) }
+      swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status, progress: 0 })
+      return {
+        stopReason: cancelled ? 'cancelled' : 'error',
+        output: cancelled ? null : String(error?.message ?? error),
+      }
     }
   })()
 
