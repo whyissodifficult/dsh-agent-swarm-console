@@ -2,6 +2,9 @@
 
 > **让 AI 团队干活看得见、信得过** —— 一个为 DeepSeek Harness 设计的多智能体可视化协作与交付验证插件。
 
+> 🚧 设计阶段 · 目标形态：DSH 插件（多 agent 画布 + 交付门禁）
+> 当前可用：src/ 适配层、wiring/ 接线层；插件形态开发中
+
 [English](README.en.md) · 中文
 
 ---
@@ -39,6 +42,29 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 - [ ] P1 · 国内 agent 适配层
 - [ ] P2 · 交付门禁
 - [ ] P3 · 开源 v0.1
+
+---
+
+## 路线图
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 阶段1 | 适配层（`src/`）：国内 agent 伪装成原生 run | ✅ |
+| 阶段2 | 接线层（`wiring/`）：把适配层打进 dsh-agent-swarm | ✅ |
+| 阶段3 | 插件化：bundle + 画布 | ⏳ |
+| 阶段4 | 交付门禁：evidence 四态 + 三态 gate | ⏳ |
+
+### 当前状态与安装
+
+**现在还不能装成 DSH 插件**——插件形态（bundle + 画布）在开发中。当前可用的是两层代码，按下面的方式验证：
+
+```bash
+npm test                                  # 适配层自测（32 项）
+npm run probe                             # 回归探针（10 项）
+node wiring/install.mjs <上游 dsh-agent-swarm 目录>   # 把适配层接进 swarm
+```
+
+`wiring/` 是**过渡形态**：它用补丁把适配层接进现有的 dsh-agent-swarm，插件化完成后会被正式 bundle 取代。接线细节与上游获取见 [wiring/README.md](wiring/README.md)。
 
 ---
 

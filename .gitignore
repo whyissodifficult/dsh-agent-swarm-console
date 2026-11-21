@@ -1,0 +1,4 @@
+node_modules/
+.wiring-backup/
+*.log
+*.tgz
