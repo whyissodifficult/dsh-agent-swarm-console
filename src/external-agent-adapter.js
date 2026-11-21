@@ -24,7 +24,8 @@ const PROGRESS_FULL_CHARS = 2000
  * @property {string} apiKeyEnv       取令牌的 env 名（不把 key 写进代码）
  * @property {string[]} models         可用模型，第一个是默认
  * @property {string[]} capabilities   能力标签——"因材施教"靠它路由
- * @property {number} [maxConcurrency] 最大并发
+ * @property {number} [maxConcurrency] 最大并发 —— 预留字段，未接线。
+ *   本适配器目前不按此值限流；调用方若需要并发上限，请自行在 spawn 层排队。
  */
 
 /**
@@ -96,7 +97,8 @@ export async function callChat(opts) {
 
   // P1-9: 超时 + 429/5xx 指数退避重试。
   const url = `${profile.baseUrl.replace(/\/$/, '')}/chat/completions`
-  const TIMEOUT_MS = 120000
+  // R5: 超时可配。默认 120 秒，用 SWARM_TIMEOUT_MS 覆盖（毫秒）。
+  const TIMEOUT_MS = Number(process.env.SWARM_TIMEOUT_MS ?? 120000)
   const RETRYABLE = new Set([429, 500, 502, 503, 504])
   const MAX_RETRIES = 3
 
@@ -303,7 +305,7 @@ export function parseResult(output) {
  * @property {string} sessionId
  * @property {string} agentId
  * @property {SwarmLike} swarm
- * @property {import('./adapter.js').AgentProfile} profile
+ * @property {import('./external-agent-adapter.js').AgentProfile} profile
  * @property {AbortSignal} [signal]
  */
 
@@ -311,7 +313,7 @@ export function parseResult(output) {
  * 造一个"看起来像 DSH subagent run"的句柄，内部走国内 API。
  * @param {SpawnSpec} spec
  * @param {SpawnContext} ctx
- * @returns {import('./adapter.js').AdapterRun}
+ * @returns {import('./external-agent-adapter.js').AdapterRun}
  */
 export function createAdapterRun(spec, ctx) {
   // P1-8: 同毫秒并发创建会重号（Date.now().toString(36) 精度只到毫秒）。
@@ -358,11 +360,11 @@ export function createAdapterRun(spec, ctx) {
         signal: controller.signal,
         onChunk: (delta) => {
           buffer += delta
-          // P1-6: 只在数值真的变化时发事件。
-          // 旧条件 `progress - lastProgress < 3 && progress < 95` 在 progress=95
-          // 之后恒为 false，于是每个 chunk 都发一条 —— 300 chunk = 300+ 条事件。
+          // R1: 步长节流。每跨 4 个百分点才发一条，压住 chunk 密集时的事件风暴。
+          // 上一版只判"值变没变"，60 字符/chunk 时每块跨 3%，300 chunk 实测 34 条
+          // （阈值 ≤30）。步长 4 → 最多 24 条 + 首尾两条。
           const progress = Math.min(95, Math.round((buffer.length / PROGRESS_FULL_CHARS) * 100))
-          if (progress === lastProgress) return
+          if (progress - lastProgress < 4) return
           lastProgress = progress
           swarm.upsertAgent(sessionId, agentId, { progress })
           swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'active', progress })

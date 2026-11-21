@@ -9,6 +9,10 @@
  *   QODER_BASE_URL    / QODER_MODEL
  *   KIMI_BASE_URL     / KIMI_MODEL
  *   OLLAMA_BASE_URL  / OLLAMA_MODEL
+ *
+ * 注意：下面各条目的 maxConcurrency 目前是「预留，未接线」——
+ * external-agent-adapter.js 不按它限流，也没有信号量/排队实现。
+ * 需要并发上限时请在调用方（swarm 的 spawn 层）自己做排队。
  */
 
 /** 取环境变量覆盖值，没设就用默认值。 */

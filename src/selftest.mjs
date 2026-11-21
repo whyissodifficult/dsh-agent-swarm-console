@@ -267,7 +267,7 @@ console.log('\n=== ⑮ P1-6: 进度事件不刷屏 ===')
   ok('status事件 < 20 条', count < 20, `实际=${count}`)
 }
 
-console.log(`\n${'=' * 40}`)
+console.log(`\n${'='.repeat(40)}`)
 console.log(`  通过 ${pass} / ${pass + fail}${fail ? `  失败 ${fail}` : '  全部通过 ✅'}`)
-console.log(`${'=' * 40}\n`)
+console.log(`${'='.repeat(40)}\n`)
 process.exit(fail > 0 ? 1 : 0)

@@ -5,10 +5,11 @@
   "description": "External-agent adapter layer for DSH Agent Swarm — run domestic AI models through a native-looking subagent run.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.3"
   },
   "scripts": {
     "test": "node src/selftest.mjs",
+    "probe": "node probe.mjs",
     "verify:patch": "node verify-patch-config.mjs"
   },
   "devDependencies": {
