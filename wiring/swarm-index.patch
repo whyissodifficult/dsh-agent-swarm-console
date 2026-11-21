@@ -1,0 +1,208 @@
+diff --git a/lib/index.js b/lib/index.js
+index 0832b04..b119ac6 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -29,6 +29,8 @@ import {
+   emptySwarm,
+   swarmStoreDir
+ } from "./store.js";
++// ── 外部 agent 适配层（国内模型）：把外部 API 伪装成原生 subagent run ──
++import { createAdapterRun } from "./external-agent-adapter.js";
+ 
+ const name = "agent-swarm";
+ 
+@@ -399,6 +401,14 @@ function apply(ctx, config = {}) {
+       ? Math.max(1, Math.min(64, Number(config.concurrencyLimit)))
+       : 3,
+     providers: normalizeList(config.providers),
++    // ── 外部 agent 适配层（国内模型）──
++    // 配了 externalAgents，就用适配器调外部 API；没配就走原生 ctx.subagents。
++    // 两者产出的 run 形状一致，所以下游代码（事件流/产物/日志）完全不用改。
++    externalAgents: config.externalAgents && typeof config.externalAgents === "object"
++      ? config.externalAgents
++      : {},
++    // 能力路由：任务要什么能力 → 选哪个外部 agent
++    capabilityRouting: config.capabilityRouting === true,
+     // Default model / reasoning effort for spawned subagents (the main agent can
+     // override per-spawn via the spec, deciding by task difficulty and nature).
+     model: typeof config.model === "string" && config.model !== "" ? config.model : null,
+@@ -1158,16 +1168,176 @@ function apply(ctx, config = {}) {
+   // Real subagent spawning over ctx.subagents
+   // ---------------------------------------------------------------------------
+ 
++  /**
++   * 选一个外部 agent 画像。
++   * 规则：
++   *   1. spec.agent 明确指定 → 用它
++   *   2. spec.role 命中某个 agent 的 role → 用它
++   *   3. 开了 capabilityRouting：spec.capabilities 全匹配的 → 用它
++   *   4. 只有一个外部 agent → 用它
++   *   5. 否则 undefined（走原生 subagent）
++   */
++  const pickExternalProfile = (spec, cfg) => {
++    const table = cfg.externalAgents ?? {};
++    const names = Object.keys(table);
++    if (names.length === 0) return undefined;
++
++    if (typeof spec.agent === "string" && table[spec.agent] !== undefined) {
++      return { name: spec.agent, profile: table[spec.agent] };
++    }
++    if (typeof spec.role === "string" && spec.role.trim() !== "") {
++      const hit = names.find((n) => table[n].role === spec.role);
++      if (hit !== undefined) return { name: hit, profile: table[hit] };
++    }
++    if (cfg.capabilityRouting === true && Array.isArray(spec.capabilities)) {
++      const need = spec.capabilities.filter((c) => typeof c === "string");
++      if (need.length > 0) {
++        const hit = names.find((n) => {
++          const caps = Array.isArray(table[n].capabilities) ? table[n].capabilities : [];
++          return need.every((c) => caps.includes(c));
++        });
++        if (hit !== undefined) return { name: hit, profile: table[hit] };
++      }
++    }
++    if (names.length === 1) return { name: names[0], profile: table[names[0]] };
++    return undefined;
++  };
++
++  /**
++   * 用外部 agent（国内 API）跑一个 one-shot worker。
++   * 产出的 run 形状与 ctx.subagents.start() 完全一致：
++   *   { id, result: Promise<{stopReason, output}>, dispose() }
++   * 所以下游（runsFor / childToRoster / 事件流 / 产物归因）全部不用改。
++   */
++  const spawnExternal = async (session, spec, picked) => {
++    const profile = picked.profile;
++    const agentId = typeof spec.id === "string" && spec.id !== "" ? spec.id : "ext-" + Date.now().toString(36);
++    const role = typeof spec.role === "string" ? spec.role : "worker";
++    const task = typeof spec.task === "string" ? spec.task : "";
++    const rolePrompt = typeof spec.rolePrompt === "string" ? spec.rolePrompt.trim() : "";
++    const objective = typeof spec.objective === "string" ? spec.objective.trim() : "";
++    const outlinePlan = spec.outlinePlan === true;
++
++    const swarm = load(session.id);
++    const entry = agentById(swarm, agentId);
++    if (entry === undefined) {
++      return { ok: false, error: `unknown agent "${agentId}"` };
++    }
++
++    const model = typeof spec.model === "string" && spec.model !== ""
++      ? spec.model
++      : (Array.isArray(profile.models) ? profile.models[0] : undefined);
++    const reasoningEffort = typeof spec.reasoningEffort === "string" && spec.reasoningEffort !== ""
++      ? spec.reasoningEffort
++      : (cfg.reasoningEffort ?? undefined);
++
++    // 适配器需要的 swarm 门面（把插件内部能力包一层给它）
++    const facade = {
++      emitSwarmEvent: (sid, type, data) => emitSwarmEvent(sid, type, data),
++      persist: (sid) => { persist(sid, load(sid)); },
++      upsertAgent: (sid, aid, patch) => {
++        const sw = load(sid);
++        const a = agentById(sw, aid);
++        if (a !== undefined) Object.assign(a, patch);
++        persist(sid, sw);
++      }
++    };
++
++    let run;
++    try {
++      run = createAdapterRun(
++        {
++          id: agentId,
++          name: typeof spec.name === "string" ? spec.name : picked.name,
++          role,
++          task,
++          rolePrompt: rolePrompt !== "" ? rolePrompt : undefined,
++          objective: objective !== "" ? objective : undefined,
++          outlinePlan,
++          model,
++          reasoningEffort
++        },
++        {
++          sessionId: session.id,
++          agentId,
++          swarm: facade,
++          profile: {
++            name: picked.name,
++            baseUrl: profile.baseUrl,
++            apiKeyEnv: profile.apiKeyEnv,
++            models: Array.isArray(profile.models) ? profile.models : [],
++            capabilities: Array.isArray(profile.capabilities) ? profile.capabilities : []
++          },
++          signal: AbortSignal.timeout(30 * 60 * 1000)
++        }
++      );
++    } catch (error) {
++      settleAgent(swarm, agentId, false);
++      save();
++      return { ok: false, error: `spawn failed: ${String(error)}`, agentId };
++    }
++
++    runsFor(session.id).set(run.id, run);
++    childToRoster.set(run.id, { sessionId: session.id, agentId });
++    spawnMeta.set(run.id, {
++      agentId,
++      name: typeof spec.name === "string" ? spec.name : picked.name,
++      role,
++      task,
++      objective: swarm.objective,
++      parentSessionId: session.id,
++      turn: currentTurn(session),
++      spawnedAt: Date.now(),
++      root: workspaceRoot(session),
++      before: new Set(),
++      beforeFiles: new Set()
++    });
++    if (entry !== undefined) entry.childId = run.id;
++    save();
++
++    const done = run.result
++      .then((result) => {
++        settleAgent(swarm, agentId, result.stopReason === "completed");
++        const sw = load(session.id);
++        const a = agentById(sw, agentId);
++        if (a !== undefined && Array.isArray(a.plan)) {
++          emitSwarmEvent(session.id, "swarm/agent/plan", { agentId, plan: a.plan });
++        }
++        persist(session.id, sw);
++        maybeResumeMain(session);
++        const settled = agentById(load(session.id), agentId);
++        emitSwarmEvent(session.id, "swarm/agent/status", {
++          agentId,
++          status: settled?.status ?? "error",
++          progress: settled?.progress ?? 0
++        });
++      })
++      .catch(() => {
++        settleAgent(swarm, agentId, false);
++        persist(session.id, swarm);
++        maybeResumeMain(session);
++        emitSwarmEvent(session.id, "swarm/agent/status", { agentId, status: "error", progress: 0 });
++      });
++
++    return { ok: true, agentId, childId: run.id, done };
++  };
++
+   /** Spawn one subagent (one-shot) and track it in the roster. */
+   const spawn = async (session, spec) => {
+     if (session === undefined) return { ok: false, error: "no_active_session" };
++    const parent = agentForSession(ctx, session.id);
++    if (parent === undefined) return { ok: false, error: "no live agent for session" };
++
++    // ── 外部 agent 分支：本次 spawn 走适配器调国内 API ──
++    const externalProfile = pickExternalProfile(spec, cfg);
++    if (externalProfile !== undefined) {
++      return spawnExternal(session, spec, externalProfile);
++    }
++
+     const subagents = ctx.get("subagents");
+     if (subagents === undefined || typeof subagents.start !== "function") {
+       return { ok: false, error: "subagent service unavailable" };
+     }
+-    const parent = agentForSession(ctx, session.id);
+-    if (parent === undefined) return { ok: false, error: "no live agent for session" };
+-
+     const provider = cfg.providers.length > 0 ? cfg.providers[0] : defaultProvider(subagents);
+     if (subagents.getProvider(provider) === undefined) {
+       return { ok: false, error: `no subagent provider "${provider}"` };
