@@ -85,6 +85,12 @@ node wiring/install.mjs <上游 dsh-agent-swarm 目录>   # 把适配层接进 s
 
 ---
 
+## 设计参考
+
+门禁契约的设计参考：ai-council（同学项目，未开源）。本仓库的实现为独立重写，未包含其代码。
+
+---
+
 ## 许可证
 
 [MIT](LICENSE)
