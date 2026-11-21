@@ -93,6 +93,6 @@ node wiring/install.mjs <上游 dsh-agent-swarm 目录>   # 把适配层接进 s
 
 ## 作者
 
-郑志阳（Walk in the white）· 临沂大学电气工程及其自动化 · 2026
+郑志阳（Walk in the white）· 2026
 
 一个相信「让 AI 团队干活，也能像带真实团队一样看得见、管得住」的大一学生。
