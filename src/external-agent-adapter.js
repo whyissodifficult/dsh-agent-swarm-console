@@ -1,0 +1,399 @@
+/**
+ * P1 · 国内 agent 适配层（纯 JS，DSH 插件可直接用）
+ *
+ * 目标：让 swarm 的 spawn 不用改，就能把活派给国内 AI（DeepSeek / Qoder / Kimi / 本地 Ollama）。
+ *
+ * 核心契约（源码 index.js:1252 / 1266 / 1287 / 1134）：
+ *   返回的对象必须有  id / result(Promise) / dispose()
+ *   result 兑现为 { stopReason: "completed"|"cancelled"|"error", output }
+ *
+ * 关键：本适配器不依赖 DSH 的 ctx.subagents —— 低版本 DSH 也能跑。
+ * 用能力探测（capability detection）代替版本判断。
+ */
+
+/**
+ * Agent 画像：一个可调用的国内 agent
+ * @typedef {Object} AgentProfile
+ * @property {string} name            唯一 id
+ * @property {string} baseUrl         OpenAI 兼容端点，如 https://api.deepseek.com/v1
+ * @property {string} apiKeyEnv       取令牌的 env 名（不把 key 写进代码）
+ * @property {string[]} models         可用模型，第一个是默认
+ * @property {string[]} capabilities   能力标签——"因材施教"靠它路由
+ * @property {number} [maxConcurrency] 最大并发
+ */
+
+/**
+ * @typedef {Object} RunResult
+ * @property {'completed'|'cancelled'|'error'} stopReason
+ * @property {unknown} output
+ */
+
+/**
+ * @typedef {Object} AdapterRun
+ * @property {string} id
+ * @property {Promise<RunResult>} result
+ * @property {() => Promise<void>} dispose
+ */
+
+// ── 能力探测（替代版本判断）────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} Capabilities
+ * @property {boolean} hostSubagents  宿主能否提供 DSH subagent（本适配器不依赖它）
+ * @property {boolean} sse            能不能发 SSE（不能就只写 JSONL + 内存）
+ */
+
+/**
+ * 探测宿主能力。不看版本号，只看"有没有这个功能"。
+ * @param {any} ctx Cordis ctx
+ * @returns {Capabilities}
+ */
+export function detectCapabilities(ctx) {
+  const c = ctx
+  return {
+    hostSubagents: typeof c?.get?.('subagents')?.start === 'function',
+    sse: typeof c?.webServer?.register === 'function',
+  }
+}
+
+// ── HTTP 调用（OpenAI 兼容协议）────────────────────────────────────────────
+
+/**
+ * 调一次 chat completions，流式优先。
+ * @param {Object} opts
+ * @param {AgentProfile} opts.profile
+ * @param {string} opts.prompt
+ * @param {string} [opts.systemPrompt]
+ * @param {string} [opts.model]
+ * @param {string} [opts.reasoningEffort]
+ * @param {AbortSignal} [opts.signal]
+ * @param {(delta: string) => void} [opts.onChunk]
+ * @returns {Promise<string>} 完整文本
+ */
+export async function callChat(opts) {
+  const profile = opts.profile
+  const model = opts.model || profile.models[0]
+  const key = process.env[profile.apiKeyEnv]
+  if (!key) {
+    throw new Error(`缺少环境变量 ${profile.apiKeyEnv}（profile: ${profile.name}）`)
+  }
+
+  const messages = []
+  if (opts.systemPrompt) messages.push({ role: 'system', content: opts.systemPrompt })
+  messages.push({ role: 'user', content: opts.prompt })
+
+  const body = { model, messages, stream: true }
+  // DeepSeek 的 reasoning effort 走这个字段；不支持的 provider 会忽略
+  if (opts.reasoningEffort) body.reasoning_effort = opts.reasoningEffort
+
+  const res = await fetch(`${profile.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+    signal: opts.signal,
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`${profile.name} HTTP ${res.status}: ${text.slice(0, 300)}`)
+  }
+
+  const reader = res.body && res.body.getReader ? res.body.getReader() : undefined
+  if (!reader) {
+    const json = await res.json()
+    return json?.choices?.[0]?.message?.content ?? ''
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let full = ''
+  while (true) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    buffer += decoder.decode(chunk.value, { stream: true })
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() ?? ''
+    for (const part of parts) {
+      for (const line of part.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (!data || data === '[DONE]') continue
+        try {
+          const json = JSON.parse(data)
+          const delta = json?.choices?.[0]?.delta?.content
+          if (typeof delta === 'string' && delta.length > 0) {
+            full += delta
+            if (opts.onChunk) opts.onChunk(delta)
+          }
+        } catch {
+          // 忽略解析不了的行（keep-alive 等）
+        }
+      }
+    }
+  }
+  return full
+}
+
+// ── 提示词模板（让 UI 数据层照常工作）──────────────────────────────────────
+
+/**
+ * swarm 的数据层靠"提示词驱动"：agent 主动输出计划 / 汇报 TODO / 给最终结果。
+ * 我们没有 DSH 的 todo 工具和文件写入，所以用提示词 + 解析来替代。
+ * @param {{task:string, rolePrompt?:string, objective?:string, outlinePlan?:boolean}} opts
+ * @returns {string}
+ */
+export function buildPrompt(opts) {
+  const parts = []
+  if (opts.objective) parts.push(`总体目标：${opts.objective}`)
+  if (opts.rolePrompt) parts.push(`你的角色：${opts.rolePrompt}`)
+  parts.push(`任务：${opts.task}`)
+
+  if (opts.outlinePlan) {
+    parts.push(
+      '',
+      '开始前先输出你的计划，用这个 JSON 格式（放在 ```json 代码块里）：',
+      '```json',
+      '{"plan":[{"title":"第一步"},{"title":"第二步"}]}',
+      '```',
+      '',
+      '然后逐步执行。每完成一步，用一行 `TODO: [done] 描述` 或 `TODO: [todo] 描述` 汇报进度。',
+      '全部完成后，输出最终结果，并以一行 `RESULT:` 开头给出总结。'
+    )
+  } else {
+    parts.push('', '完成后用一行 `RESULT:` 开头给出最终结果。')
+  }
+  return parts.join('\n')
+}
+
+/**
+ * 从 agent 输出里解析计划
+ * @param {string} output
+ * @returns {{title:string}[]|undefined}
+ */
+export function parsePlanFromOutput(output) {
+  const fenced = output.match(/```json\s*([\s\S]*?)```/i)
+  const target = fenced ? fenced[1] : output
+  const start = target.indexOf('{"plan"')
+  if (start === -1) return undefined
+  let depth = 0
+  let end = -1
+  for (let i = start; i < target.length; i++) {
+    if (target[i] === '{') depth++
+    else if (target[i] === '}') {
+      depth--
+      if (depth === 0) { end = i + 1; break }
+    }
+  }
+  if (end === -1) return undefined
+  try {
+    const json = JSON.parse(target.slice(start, end))
+    if (!Array.isArray(json?.plan)) return undefined
+    return json.plan
+      .filter((p) => p && typeof p.title === 'string')
+      .map((p) => ({ title: p.title }))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 从 agent 输出里解析 TODO 行
+ * @param {string} output
+ * @returns {{text:string, done:boolean}[]}
+ */
+export function parseTodos(output) {
+  const out = []
+  for (const line of output.split(/\r?\n/)) {
+    const m = line.match(/TODO:\s*\[(done|todo)\]\s*(.+)/i)
+    if (m) out.push({ text: m[2].trim(), done: m[1].toLowerCase() === 'done' })
+  }
+  return out
+}
+
+/**
+ * 从 agent 输出里解析最终结果
+ * @param {string} output
+ * @returns {string|undefined}
+ */
+export function parseResult(output) {
+  const m = output.match(/RESULT:\s*([\s\S]+)$/)
+  return m ? m[1].trim() : undefined
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 接入 swarm：把 callChat 伪装成 swarm 认识的 run 对象
+// ═══════════════════════════════════════════════════════════════
+/**
+ * P1 · 适配器接入 swarm —— 把 callChat 伪装成 swarm 认识的 run 对象。
+ *
+ * swarm 侧只用这四样（源码 index.js）：
+ *   run.id            → childId，关联产物/日志
+ *   run.result        → Promise<{stopReason, output}>
+ *   run.dispose()     → 取消时清理
+ *
+ * 上层 spawn() 里这些代码全部不用改：
+ *   runsFor(session.id).set(run.id, run)
+ *   childToRoster.set(run.id, {...})
+ *   run.result.then(...).catch(...)
+ *   run.dispose().catch(() => {})
+ */
+
+
+/**
+ * @typedef {Object} SwarmLike
+ * @property {(sessionId: string, type: string, data: Object) => void} emitSwarmEvent
+ * @property {(sessionId: string) => void} persist
+ * @property {(sessionId: string, agentId: string, patch: Object) => void} upsertAgent
+ */
+
+/**
+ * @typedef {Object} SpawnSpec
+ * @property {string} id
+ * @property {string} name
+ * @property {string} role
+ * @property {string} task
+ * @property {string} [rolePrompt]
+ * @property {string} [objective]
+ * @property {boolean} [outlinePlan]
+ * @property {string} [model]
+ * @property {string} [reasoningEffort]
+ */
+
+/**
+ * @typedef {Object} SpawnContext
+ * @property {string} sessionId
+ * @property {string} agentId
+ * @property {SwarmLike} swarm
+ * @property {import('./adapter.js').AgentProfile} profile
+ * @property {AbortSignal} [signal]
+ */
+
+/**
+ * 造一个"看起来像 DSH subagent run"的句柄，内部走国内 API。
+ * @param {SpawnSpec} spec
+ * @param {SpawnContext} ctx
+ * @returns {import('./adapter.js').AdapterRun}
+ */
+export function createAdapterRun(spec, ctx) {
+  const runId = `run-${spec.id}-${Date.now().toString(36)}`
+  const swarm = ctx.swarm
+  const sessionId = ctx.sessionId
+  const agentId = ctx.agentId
+  const profile = ctx.profile
+
+  let aborted = false
+  const controller = new AbortController()
+  if (ctx.signal) {
+    ctx.signal.addEventListener('abort', () => {
+      aborted = true
+      controller.abort()
+    })
+  }
+
+  const result = (async () => {
+    const prompt = buildPrompt({
+      task: spec.task,
+      rolePrompt: spec.rolePrompt,
+      objective: spec.objective,
+      outlinePlan: spec.outlinePlan === true,
+    })
+
+    const systemPrompt = spec.rolePrompt
+      ? `你是 ${spec.rolePrompt}。你是团队协作 agent，完成任务并输出可解析的结构化结果。`
+      : undefined
+
+    swarm.upsertAgent(sessionId, agentId, { childId: runId, status: 'active', progress: 0 })
+    swarm.emitSwarmEvent(sessionId, 'swarm/agent/child', { agentId, childId: runId })
+    swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'active', progress: 0 })
+
+    try {
+      let buffer = ''
+      let lastProgress = 0
+      const output = await callChat({
+        profile,
+        prompt,
+        systemPrompt,
+        model: spec.model,
+        reasoningEffort: spec.reasoningEffort,
+        signal: controller.signal,
+        onChunk: (delta) => {
+          buffer += delta
+          // 进度节流：变化超过 3% 才发事件，避免每个 chunk 都刷屏
+          const progress = Math.min(95, Math.round((buffer.length / 2000) * 100))
+          if (progress - lastProgress < 3 && progress < 95) return
+          lastProgress = progress
+          swarm.upsertAgent(sessionId, agentId, { progress })
+          swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'active', progress })
+        },
+      })
+
+      if (aborted) {
+        swarm.upsertAgent(sessionId, agentId, { status: 'error', progress: 0 })
+        swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'error', progress: 0 })
+        return { stopReason: 'cancelled', output: null }
+      }
+
+      // ── 把 agent 输出翻译成 swarm 数据层要的字段 ──
+      const patch = {}
+
+      if (spec.outlinePlan) {
+        const plan = parsePlanFromOutput(output)
+        if (plan) {
+          const items = plan.map((p, i) => ({
+            id: `${agentId}-plan-${i}`,
+            title: p.title,
+            status: 'done',
+            ownerId: agentId,
+            minProgress: Math.round((i / plan.length) * 100),
+            maxProgress: Math.round(((i + 1) / plan.length) * 100),
+          }))
+          patch.plan = items
+          swarm.emitSwarmEvent(sessionId, 'swarm/agent/plan', { agentId, plan: items })
+        }
+      }
+
+      const todos = parseTodos(output)
+      if (todos.length > 0) {
+        patch.todos = todos.map((t, i) => ({ id: `${agentId}-todo-${i}`, text: t.text, done: t.done }))
+      }
+
+      patch.logs = [
+        { id: `${agentId}-log-0`, type: 'action', content: `调用 ${profile.name} (${spec.model || profile.models[0]})` },
+        { id: `${agentId}-log-1`, type: 'result', content: `完成，输出 ${output.length} 字符` },
+      ]
+
+      // 产物：P2 阶段把最终结果落成文件（swarm 靠扫描文件 + 标记归因）
+      patch.artifacts = []
+
+      swarm.upsertAgent(sessionId, agentId, patch)
+      swarm.upsertAgent(sessionId, agentId, { status: 'complete', progress: 100 })
+      swarm.persist(sessionId)
+      swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'complete', progress: 100 })
+
+      // output 是流式累积的完整文本（含计划JSON + TODO + RESULT）
+      // 解析器从完整文本里提取各部分；parseResult 只作为 result 的展示值
+      const finalResult = parseResult(output) || output
+      return { stopReason: 'completed', output, finalOutput: finalResult }
+    } catch (error) {
+      swarm.upsertAgent(sessionId, agentId, { status: 'error', progress: 0 })
+      swarm.persist(sessionId)
+      swarm.emitSwarmEvent(sessionId, 'swarm/agent/status', { agentId, status: 'error', progress: 0 })
+      return { stopReason: 'error', output: String(error?.message ?? error) }
+    }
+  })()
+
+  return {
+    id: runId,
+    result,
+    dispose: async () => {
+      aborted = true
+      controller.abort()
+      // 等 result 落定，避免 dispose 早于 result 导致状态不一致
+      await result.catch(() => undefined)
+    },
+  }
+}
