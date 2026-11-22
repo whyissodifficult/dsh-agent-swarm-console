@@ -1,3 +1,9 @@
+## 0.1.5 · 元数据乱码修复落地（0.1.4 已占用）
+
+- 0.1.4 在本地修复前就已发布，元数据仍是乱码版（npm 不允许覆盖已发布版本），故以 0.1.5 发布修正
+- 修正 `plugin/package.json` 的 description / author 与 CHANGELOG 早期条目（从历史提交取回原文）
+- 新增编码门禁 `tools/check-encoding.mjs`，并入 `npm run gate`：严格 UTF-8 + GBK 误读词表扫描
+
 ## 0.1.4 · 安装说明与验收记录对齐实测
 
 - README 安装节：npm 直装路径由「待验证」改为「已验证」（实测 profile 依赖解析为 ^0.1.3，工具与命令可用）
