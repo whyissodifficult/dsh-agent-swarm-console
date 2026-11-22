@@ -50,6 +50,7 @@ plugin_manager install_bundle <本包目录的绝对路径>
 ```text
 verify_contract   冻结契约（objective / workspaceRoot / criteria / constraints，testCmd 可选）
 verify_run        跑证据校验：checks 是「检查请求」，由插件实际执行
+/gate-freeze      确认契约（仅用户可触发）：/gate-freeze <id|前缀>
 /gate-status      不带参数列出本会话所有契约；带参数看单条（支持 id 前缀，如 7e28）
 /gate-approve     放行：/gate-approve <id|前缀> <证据hash>（仅 GREEN + hash 一致时允许）
 /gate-retry       重算并刷新判定（旧放行标 stale）
@@ -60,7 +61,11 @@ verify_run        跑证据校验：checks 是「检查请求」，由插件实�
 ```text
 > verify_contract {"objective":"给 README 加安装节","workspaceRoot":"/path/to/your/project",
                    "criteria":[{"id":"c1","text":"安装节存在","checkIds":["k1"]}]}
-contract 7e280e5c4f7e 已冻结    ← id 由内容决定，你这边的值会不同
+contract 7e280e5c4f7e 已冻结（待确认）
+等待用户确认：/gate-freeze 7e280e5c4f7e       ← 契约不经用户确认不能跑
+
+> /gate-freeze 7e28
+契约 7e280e5c4f7e 已由用户确认（confirmed）
 
 > verify_run {"contractId":"7e280e5c4f7e","checks":[{"id":"k1","type":"file.exists","path":"README.md"}]}
 门禁 GREEN：全部 1 条验收条件均有通过证据
@@ -81,6 +86,7 @@ contract 7e280e5c4f7e 已冻结    ← id 由内容决定，你这边的值会�
 - 证据由插件执行：`verify_run` 的 `checks` 是**检查请求**而非结论——`file.exists` 由插件 `existsSync` 判定，`exec` 由插件实际执行；模型自报的 `ok` 一律忽略
 - 证据分级与三态门禁（`GREEN` / `YELLOW` / `RED`）；空契约直接 `RED`
 - `RED` 必带可执行复现命令；缺证据不判通过
+- 契约须用户确认：`/gate-freeze <id>` 之后才能跑 `verify_run`（模型没有对应工具，改不了规矩）
 - 用户专属放行：`/gate-approve` `/gate-retry` `/gate-status`；重跑后旧放行标记 `stale`
 - 外部 agent 适配层（OpenAI 兼容端点，作为原生 subagent run 使用）
 
