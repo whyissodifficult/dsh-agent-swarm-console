@@ -91,7 +91,8 @@ function normalizeChecks(value) {
       throw new Error(`checks[${i}] exec 类失败 check 必须提供可执行 cmd（H2 reproCmd）`)
     }
     const out = { id: c.id, type: c.type, ok: c.ok }
-    for (const k of ['detail', 'exitCode', 'cmd']) if (c[k] !== undefined) out[k] = c[k]
+    // path 必须保留：file.exists 失败时 gate 要用它生成 `test -f <path>` 复现命令
+    for (const k of ['detail', 'exitCode', 'cmd', 'path']) if (c[k] !== undefined) out[k] = c[k]
     return out
   })
 }

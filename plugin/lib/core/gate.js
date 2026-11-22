@@ -60,10 +60,18 @@ export function decide(contract, evidence) {
   return { decision: 'GREEN', reasons, missing }
 }
 
-/** 从失败 check 构造可复制执行的最小复现命令。 */
+/** 从失败 check 构造可复制执行的最小复现命令（按检查类型给对应命令）。 */
 function reproFor(check) {
   if (typeof check.cmd === 'string' && check.cmd.trim() !== '') return check.cmd
-  // H2 兜底（正常路径下 exec 缺 cmd 已在 evidence 层被拒，见 normalizeChecks）：
-  // 给一条 sh -c 可直接执行且退出非 0 的真命令，不是装饰性注释。
-  return `echo "check ${check.id} 未提供 cmd" && exit 1`
+  // file.exists：文件缺失时 `test -f` 退出 1，正好复现这次失败
+  if (check.type === 'file.exists' && typeof check.path === 'string' && check.path !== '') {
+    return `test -f ${shellQuote(check.path)}`
+  }
+  // 其余情况兜底：给一条 sh -c 可直接执行且退出非 0 的真命令，不是装饰性注释
+  return `echo "check ${check.id} 无可执行复现命令（该检查类型未提供路径/命令）" && exit 1`
+}
+
+/** POSIX 单引号包裹，内部单引号转义为 '\'' */
+function shellQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'"
 }

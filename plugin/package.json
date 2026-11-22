@@ -1,6 +1,6 @@
 {
   "name": "dsh-swarm-console",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Run one external agent from DSH, with a visible gate (v0.1 · 门禁可用，画布开发中).",
   "keywords": [

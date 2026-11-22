@@ -153,3 +153,14 @@ test('P1-4: buildPrompt 不再内嵌示例 plan', async () => {
   assert.ok(!p.includes('第一步'), '不应再内嵌 {"plan":[...]} 示例')
   assert.match(p, /json 代码块|json 块|plan 数组/)
 })
+
+test('H2: file.exists 失败时复现命令是 test -f <path>（按类型给命令）', () => {
+  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
+  const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false, path: 'no/such/file.txt' }] })
+  const d = decide(c, e)
+  assert.equal(d.decision, 'RED')
+  assert.match(d.reproCmd, /^test -f /, '应为 test -f 形式')
+  assert.ok(!/未提供 cmd/.test(d.reproCmd), '不应再出现「未提供 cmd」')
+  const r = spawnSync('sh', ['-c', d.reproCmd], { encoding: 'utf8' })
+  if (r.error === undefined) assert.notEqual(r.status, 0, '文件不存在时 test -f 应退出非 0')
+})
