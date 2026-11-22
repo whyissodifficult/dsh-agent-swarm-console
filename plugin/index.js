@@ -134,14 +134,15 @@ function registerGateCommands(ctx) {
       {
         name: 'gate-approve',
         description: '放行一个已 GREEN 的门禁契约（仅用户可触发）',
-        input: { hint: '<contractId> [evidenceHash]' },
+        input: { hint: '<contractId> <evidenceHash>' },
         // 可传第二参数 evidenceHash 做过期校验；不传时以 runs 里的为最新
         handler: ({ agent, rawInput }) => {
           const parts = String(rawInput ?? '').trim().split(/\s+/)
+          // P0-6：第二个参数 evidenceHash 必填，不传时 gateApprove 会返回明确提示
           return gateApprove({
             contractId: parts[0] ?? '',
             sessionId: sessionOf({ agent }),
-            ...(parts[1] ? { expectedHash: parts[1] } : {}),
+            expectedHash: parts[1],
           })
         },
       },
@@ -218,6 +219,9 @@ function registerVerifyTools(ctx) {
         type: 'object',
         properties: {
           objective: { type: 'string' },
+          workspaceRoot: { type: 'string', description: '检查的根目录（绝对路径，必须存在）' },
+          testCmd: { type: 'string', description: 'exec 检查唯一允许的命令（白名单）；不填则拒绝一切 exec' },
+          policyId: { type: 'string', description: '显式声明才启用策略（如 code-change）' },
           constraints: { type: 'array', items: { type: 'string' } },
           criteria: {
             type: 'array',
@@ -232,14 +236,14 @@ function registerVerifyTools(ctx) {
             },
           },
         },
-        required: ['objective'],
+        required: ['objective', 'workspaceRoot'],
         additionalProperties: false,
       },
       output: {
         schema: { type: 'object', properties: { contractId: { type: 'string' } }, required: ['contractId'] },
         render: (args, v) => [{ type: 'text', text: `contract ${v.contractId} 已冻结` }],
       },
-      execute: async (args) => verifyContract(args),
+      execute: async (args, exec) => verifyContract(args, sessionOf(exec)),
     },
     {
       name: 'verify_run',
@@ -304,12 +308,17 @@ function registerVerifyTools(ctx) {
             missing: { type: 'array', items: { type: 'string' } },
             approved: { type: 'boolean' },
             approvedAt: { type: 'string' },
+            evidenceHash: { type: 'string' },
+            stale: { type: 'boolean' },
+            lastApprovedAt: { type: 'string' },
           },
           required: ['known'],
         },
         render: (args, v) => {
           if (!v.known) return [{ type: 'text', text: '未知 contractId，尚无门禁记录' }]
           const lines = [`最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}${v.approved ? `；已由用户放行 @ ${v.approvedAt}` : '；尚未放行'}`]
+          if (v.evidenceHash) lines.push(`证据：${v.evidenceHash}`)
+          if (v.stale) lines.push(`[stale] 上次放行已失效${v.lastApprovedAt ? `（${v.lastApprovedAt}）` : ''}`)
           if (v.reproCmd) lines.push(`复现：${v.reproCmd}`)
           if (Array.isArray(v.missing) && v.missing.length > 0) lines.push(`缺失证据：${v.missing.join('；')}`)
           return [{ type: 'text', text: lines.join('\n') }]
