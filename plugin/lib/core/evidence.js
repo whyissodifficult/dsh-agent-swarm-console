@@ -20,7 +20,9 @@ export function makeEvidence(input) {
     ? input.status
     : inferStatus(checks)
   const at = typeof input.at === 'string' && input.at !== '' ? input.at : new Date().toISOString()
-  return { contractId: input.contractId, artifacts, checks, level, status, at }
+  // 0.2.0：模型自报 ok 被忽略时记下的 warning（checks 是请求，不是结论）
+  const warnings = Array.isArray(input.warnings) ? input.warnings.filter((w) => typeof w === 'string') : []
+  return { contractId: input.contractId, artifacts, checks, level, status, at, warnings }
 }
 
 /** 证据内容哈希（用于 verify_run 返回的 evidenceHash）。 */

@@ -17,8 +17,8 @@ export function decide(contract, evidence) {
   const reasons = []
   const missing = []
 
-  if (!contract || !Array.isArray(contract.criteria)) {
-    return { decision: 'RED', reasons: ['contract.criteria 缺失或不是数组'], missing: [] }
+  if (!contract || !Array.isArray(contract.criteria) || contract.criteria.length === 0) {
+    return { decision: 'RED', reasons: ['契约没有任何验收条件，不可判通过'], missing: [] }
   }
   const checks = Array.isArray(evidence?.checks) ? evidence.checks : []
   const byId = new Map(checks.map((c) => [c.id, c]))

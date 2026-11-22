@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { apply } from '../index.js'
 import {
   verifyContract, verifyRun, newStores,
-  gateApprove, gateRetry, gateStatus,
+  gateApprove, gateRetry, gateStatus, runKey,
 } from '../lib/core/verify.js'
 
 const cfg = { externalAgents: { a: { baseUrl: 'http://x', apiKeyEnv: 'K', models: ['m'] } } }
@@ -31,7 +31,7 @@ function makeContract(stores, decision = 'GREEN') {
   const { contractId } = verifyContract({
     objective: '命令测试', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }],
   }, stores.contracts)
-  stores.runs.set(contractId, { decision, at: '2026-11-21T00:00:00Z', evidenceHash: 'x' })
+  stores.runs.set(runKey(contractId), { decision, at: '2026-11-21T00:00:00Z', evidenceHash: 'x' })
   return contractId
 }
 
@@ -69,13 +69,13 @@ test('gate-approve 对 GREEN success，随后 gate-status 显示 approved', () =
 test('gate-retry 更新 decision 时间戳（空证据重算为 YELLOW）', () => {
   const s = newStores()
   const id = makeContract(s, 'RED')
-  const before = s.runs.get(id).at
+  const before = s.runs.get(runKey(id)).at
   // 用不同时间避免时钟撞车：直接改旧时间戳
-  s.runs.set(id, { ...s.runs.get(id), at: '2020-01-01T00:00:00Z' })
+  s.runs.set(runKey(id), { ...s.runs.get(runKey(id)), at: '2020-01-01T00:00:00Z' })
   const r = gateRetry({ contractId: id }, s.contracts, s.runs)
   assert.equal(r.kind, 'success')
-  assert.equal(s.runs.get(id).decision, 'YELLOW')
-  assert.notEqual(s.runs.get(id).at, '2020-01-01T00:00:00Z')
+  assert.equal(s.runs.get(runKey(id)).decision, 'YELLOW')
+  assert.notEqual(s.runs.get(runKey(id)).at, '2020-01-01T00:00:00Z')
   assert.match(r.text, /需重新执行 verify_run 补证据/)
 })
 
@@ -91,7 +91,12 @@ test('gate-status 在 RED 时带复现命令（H2 可见性）', () => {
   const { contractId } = verifyContract({
     objective: 'H2 可见性', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }],
   }, s.contracts)
-  const run = verifyRun({ contractId, evidenceInput: { checks: [{ id: 'k', type: 'exec', ok: false, cmd: 'npm test' }] } }, s.contracts, s.runs)
+  // 0.2.0：checks 是请求，自报 ok 被忽略；用注入 exec 造真实失败，不真跑命令
+  const run = verifyRun({
+    contractId,
+    evidenceInput: { checks: [{ id: 'k', type: 'exec', cmd: 'npm test' }] },
+    checkDeps: { exec: () => ({ status: 1, error: undefined, stderr: 'exit 1' }) },
+  }, s.contracts, s.runs)
   assert.equal(run.decision, 'RED')
   const st = gateStatus({ contractId }, s.contracts, s.runs)
   assert.equal(st.kind, 'success')
@@ -109,4 +114,42 @@ test('gate-status 在 YELLOW 时带缺失证据（H1 可见性）', () => {
   assert.equal(st.kind, 'success')
   assert.match(st.text, /YELLOW/)
   assert.match(st.text, /缺失证据：/, 'YELLOW 的 gate-status 必须列出缺失证据')
+})
+
+// ── P0-4 · 状态正确性 ────────────────────────────────────────────────
+test('P0-4: approve 后 retry → status 显示 [stale]', () => {
+  const s = newStores()
+  const id = makeContract(s, 'GREEN')
+  assert.equal(gateApprove({ contractId: id }, s.contracts, s.runs).kind, 'success')
+  assert.match(gateStatus({ contractId: id }, s.contracts, s.runs).text, /已由 user 放行/)
+  gateRetry({ contractId: id }, s.contracts, s.runs)
+  const st = gateStatus({ contractId: id }, s.contracts, s.runs)
+  assert.match(st.text, /\[stale\]/)
+  assert.match(st.text, /已过期/, '旧放行应标记为过期')
+  const rec = s.runs.get(runKey(id))
+  assert.equal(rec.stale, true)
+  assert.equal(rec.approvedAt, undefined, 'approvedAt 应被清掉')
+})
+
+test('P0-4: 篡改 evidenceHash 后 approve 被拒（证据已过期）', () => {
+  const s = newStores()
+  const id = makeContract(s, 'GREEN')
+  // 最近 verify_run 的 hash 是 'x'；approve 时外部带上旧 hash → 不一致
+  const r = gateApprove({ contractId: id, expectedHash: 'tampered-hash' }, s.contracts, s.runs)
+  assert.equal(r.kind, 'error')
+  assert.match(r.text, /证据已过期，请重新 verify_run/)
+  assert.equal(s.runs.get(runKey(id)).approved, undefined, '被拒时不应写入 approved')
+})
+
+test('P0-4: 同 contractId 不同 session 状态隔离', () => {
+  const s = newStores()
+  const id = makeContract(s, 'GREEN')
+  // 给 s1 会话单独放一条 GREEN 决定（default 键由 makeContract 建）
+  s.runs.set(runKey(id, 's1'), { decision: 'GREEN', at: '2026-11-21T00:00:00Z', evidenceHash: 'x' })
+  gateApprove({ contractId: id, sessionId: 's1' }, s.contracts, s.runs)
+  const a = gateStatus({ contractId: id, sessionId: 's1' }, s.contracts, s.runs)
+  const b = gateStatus({ contractId: id, sessionId: 's2' }, s.contracts, s.runs)
+  assert.match(a.text, /已由 user 放行/)
+  assert.match(b.text, /尚无门禁决定|尚未放行/)
+  assert.notEqual(s.runs.get(runKey(id, 's1')), s.runs.get(runKey(id, 's2')))
 })

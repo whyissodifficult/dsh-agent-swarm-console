@@ -191,11 +191,7 @@ export function buildPrompt(opts) {
   if (opts.outlinePlan) {
     parts.push(
       '',
-      '开始前先输出你的计划，用这个 JSON 格式（放在 ```json 代码块里）：',
-      '```json',
-      '{"plan":[{"title":"第一步"},{"title":"第二步"}]}',
-      '```',
-      '',
+      '开始前先输出你的计划：写一个 json 代码块，内含 plan 数组，每个元素有 title 字段。',
       '然后逐步执行。每完成一步，用一行 `TODO: [done] 描述` 或 `TODO: [todo] 描述` 汇报进度。',
       '全部完成后，输出最终结果，并以一行 `RESULT:` 开头给出总结。'
     )
@@ -211,8 +207,9 @@ export function buildPrompt(opts) {
  * @returns {{title:string}[]|undefined}
  */
 export function parsePlanFromOutput(output) {
-  const fenced = output.match(/```json\s*([\s\S]*?)```/i)
-  const target = fenced ? fenced[1] : output
+  // P1-4：取最后一个 ```json 块（agent 可能多次输出计划，最后一份才是定稿）
+  const blocks = [...output.matchAll(/```json\s*([\s\S]*?)```/gi)]
+  const target = blocks.length > 0 ? blocks[blocks.length - 1][1] : output
   const start = target.indexOf('{"plan"')
   if (start === -1) return undefined
   let depth = 0

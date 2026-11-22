@@ -1,3 +1,14 @@
+## 0.2.0 · 证据真实化 + 状态正确性（破坏性变更）
+
+**破坏性变更：checks 语义变了。** 0.1.x 的 checks 是模型**自报的结论**（`ok` 由模型填写，插件照单全收）；0.2.0 起 checks 是**检查请求**，由插件真实执行后判定——`file.exists` 查文件、`exec` 真跑命令，模型传的 `ok` 一律忽略并记 warning。旧调用方若仍传 `ok` 当结论，行为会变，必须按新语义重接。
+
+- P0-1 空 criteria 不再判 GREEN，直接 RED（「契约没有任何验收条件，不可判通过」）
+- P0-2 新增 `lib/core/checks.js`：可注入执行器的检查请求引擎；evidence 增 `warnings[]`
+- P0-3 接 policy runner：未给 checks 时按 `code-change` 策略生成检查请求；策略进发布包
+- P0-4 运行状态键改 `sessionId:contractId`；approve 校验 evidenceHash（过期拒绝）；retry 保留 approved 标记 stale，`/gate-status` 显示 `[stale]`
+- P1 六项：测试健壮性（git/sh 不可用显式 skip）、编码词表扩充与全仓扫描、adapter 取最后 json 块并去掉内嵌示例、wiring 适配层消重为 re-export、文档与八段门禁对齐
+- 门禁升为八段：`npm run gate` 含 encoding（严格 UTF-8 + GBK 误读词表）
+
 ## 0.1.5 · 元数据乱码修复落地（0.1.4 已占用）
 
 - 0.1.4 在本地修复前就已发布，元数据仍是乱码版（npm 不允许覆盖已发布版本），故以 0.1.5 发布修正
@@ -30,10 +41,10 @@
 - 包内补 `LICENSE`（此前只有仓库根有，npm 页的许可链接会 404）
 - 版本 0.1.0 → 0.1.1（0.1.0 已发布，不可覆盖；npm 现为分阶段发布，需 2FA 批准）
 - 为什么：市场与扶持计划看的是作品页，包页没有 README 等于没有说明书
-# 鏇存柊鏃ュ織
+# 更新日志
 
 ## 0.1.0 · 可安装插件 + 交付门禁 v1
-3A 把适配层做成可安装的 DSH bundle（`plugin/`，`swarm_run` 已实机注册）；verify v1 落地任务契约、证据与 GREEN/YELLOW/RED 三态门禁，并把 H1 证据先于验收、H2 失败必给可执行复现命令、H3 放行只能由用户触发写进代码；`npm run gate` 串起七段门禁（probe / selftest / plugin:test / smoke / pack / wiring:test / dryrun），让每次改动都能一键验完再交付。
+3A 把适配层做成可安装的 DSH bundle（`plugin/`，`swarm_run` 已实机注册）；verify v1 落地任务契约、证据与 GREEN/YELLOW/RED 三态门禁，并把 H1 证据先于验收、H2 失败必给可执行复现命令、H3 放行只能由用户触发写进代码；`npm run gate` 串起七段门禁（probe / selftest / plugin:test / smoke / pack / wiring:test / dryrun；0.1.5 起 encoding 入链，共八段），让每次改动都能一键验完再交付。
 
 ## 0.0.3 · 评审修复
 按 DSH 两轮评审修 P0/P1/P2 共 13 项（静默失败、伪造进度、取消语义、README 恢复、补丁真实性反证、上游校验等），并把评审探针纳入仓库 —— 官方评审是可信交付的门禁，逐条对得上 diff 才拿得到作者计划的认可与后续奖励。

@@ -100,7 +100,8 @@ if (current.includes(INSTALL_MARK)) {
 }
 
 // 2) 装新版适配器（替换旧版）
-const adapterSrc = join(here, 'external-agent-adapter.js')
+// P1-5：wiring 版已改为 re-export shim，复制给上游必须用自包含的唯一实现
+const adapterSrc = join(here, '..', 'plugin', 'lib', 'adapter.js')
 const adapterDst = join(target, 'lib', 'external-agent-adapter.js')
 if (existsSync(adapterDst)) {
   const oldText = readFileSync(adapterDst, 'utf8')

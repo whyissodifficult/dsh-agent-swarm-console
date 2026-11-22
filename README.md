@@ -2,8 +2,8 @@
 
 > **让 AI 团队干活看得见、信得过** —— 一个为 DeepSeek Harness 设计的多智能体可视化协作与交付验证插件。
 
-> 🚧 设计阶段 · 目标形态：DSH 插件（多 agent 画布 + 交付门禁）
-> 当前可用：src/ 适配层、wiring/ 接线层；插件形态开发中
+> ✅ 已发布 `dsh-swarm-console@0.1.5` · 可安装 Host 插件 + 机器可验证的交付门禁
+> 已实测：npm 包名安装与本地目录安装两条路径均可用；画布仍在开发中
 
 [English](README.en.md) · 中文
 
@@ -41,15 +41,15 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 plugin_manager install_bundle <plugin 绝对路径>
 ```
 
-装完以 link 方式挂在当前 profile：**改代码需重启 DSH 或等 HMR 才生效**。配置 `externalAgents` 见 [plugin/docs/DETAIL.md](plugin/docs/DETAIL.md)。
+**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.1.5`，`verify_*` 与三条斜杠命令均可用。
 
-**待验证**（尚未实测，不保证可用）：通过 npm 包名安装、从插件市场一键安装。这两条路径等正式发布后再补证据。
+本地目录安装以 link 方式挂在当前 profile：**改代码需重启 DSH 或等 HMR 才生效**；卸载 link 插件会清空被链接目录，请只链接已提交/已备份的目录。配置 `externalAgents` 见 [plugin/docs/DETAIL.md](plugin/docs/DETAIL.md)。
 
 ---
 
 ## 状态
 
-> 🚧 **设计中，尚未发布** —— 已报名 DeepSeek Harness 插件作者支持计划，等待第一个可运行版本。
+> ✅ **0.1.5 已发布** —— npm 包名安装与本地目录安装两条路径均已实测，交付门禁与三条斜杠命令可用；画布仍开发中。
 
 - [x] 竞品调研与架构设计
 - [x] 设计文档定稿（v1.1）
@@ -94,7 +94,7 @@ node wiring/install.mjs <上游 dsh-agent-swarm 目录>   # 把适配层接进 s
 
 ## 上架清单
 
-- [ ] icon.svg（原创或可再分发授权）放入 `plugin/` 包根，`exports` 加 `"./icon": "./icon.svg"`，`files` 加 `"icon.svg"`
+- [x] icon.svg **已具备**：已放入 `plugin/` 包根，`exports` 有 `"./icon": "./icon.svg"`，`files` 含 `"icon.svg"`，插件页已渲染
 
 > 包名说明：npm 包名是 `dsh-swarm-console`，仓库名沿用 `dsh-agent-swarm-console`（两者不必一致）。
 

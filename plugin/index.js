@@ -119,6 +119,12 @@ export function apply(ctx, config) {
  * commands 由 dsh base 自带；仍走 inject 保持挂载时机安全。
  * 命令名 kebab-case、不带斜杠；handler 返回 {kind:'success'|'error', text}。
  */
+/** P0-4 · 从工具/命令调用上下文取 sessionId，拿不到用 default。 */
+function sessionOf(invocation) {
+  const id = invocation?.agent?.session?.id
+  return typeof id === 'string' && id !== '' ? id : 'default'
+}
+
 function registerGateCommands(ctx) {
   if (typeof ctx.inject !== 'function') return
   ctx.inject(['commands'], (ctx) => {
@@ -128,20 +134,28 @@ function registerGateCommands(ctx) {
       {
         name: 'gate-approve',
         description: '放行一个已 GREEN 的门禁契约（仅用户可触发）',
-        input: { hint: '<contractId>' },
-        handler: ({ rawInput }) => gateApprove({ contractId: String(rawInput ?? '').trim() }),
+        input: { hint: '<contractId> [evidenceHash]' },
+        // 可传第二参数 evidenceHash 做过期校验；不传时以 runs 里的为最新
+        handler: ({ agent, rawInput }) => {
+          const parts = String(rawInput ?? '').trim().split(/\s+/)
+          return gateApprove({
+            contractId: parts[0] ?? '',
+            sessionId: sessionOf({ agent }),
+            ...(parts[1] ? { expectedHash: parts[1] } : {}),
+          })
+        },
       },
       {
         name: 'gate-retry',
         description: '重跑某契约的门禁校验并刷新决定',
         input: { hint: '<contractId>' },
-        handler: ({ rawInput }) => gateRetry({ contractId: String(rawInput ?? '').trim() }),
+        handler: ({ agent, rawInput }) => gateRetry({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
       },
       {
         name: 'gate-status',
         description: '查看某契约的最近门禁决定与放行状态',
         input: { hint: '<contractId>' },
-        handler: ({ rawInput }) => gateStatus({ contractId: String(rawInput ?? '').trim() }),
+        handler: ({ agent, rawInput }) => gateStatus({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
       },
     ]
     for (const def of defs) ctx.effect(() => commands.register(def))
@@ -266,7 +280,8 @@ function registerVerifyTools(ctx) {
         const wc = exec?.workspaceChanges ?? {}
         const diffEvidence = typeof wc.summary === 'string' ? wc.summary : (typeof wc.diff === 'string' ? wc.diff : undefined)
         const evidenceInput = args.checks ? { checks: args.checks, diff: diffEvidence } : undefined
-        return verifyRun({ contractId: args.contractId, evidenceInput })
+        // 0.2.0 P0-3：未显式给 checks 时按 code-change 策略生成检查请求
+        return verifyRun({ contractId: args.contractId, sessionId: sessionOf(exec), evidenceInput, usePolicy: !evidenceInput })
       },
     },
     {
@@ -300,7 +315,7 @@ function registerVerifyTools(ctx) {
           return [{ type: 'text', text: lines.join('\n') }]
         },
       },
-      execute: async (args) => verifyStatus({ contractId: args.contractId }),
+      execute: async (args, exec) => verifyStatus({ contractId: args.contractId, sessionId: sessionOf(exec) }),
     },
   ]
   for (const def of defs) ctx.effect(() => ctx.tools.register(def))

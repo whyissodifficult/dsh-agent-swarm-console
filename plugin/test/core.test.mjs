@@ -69,6 +69,13 @@ test('gate: R3 全通过 → GREEN', () => {
   assert.equal(d.decision, 'GREEN')
   assert.equal(d.missing.length, 0)
 })
+test('P0-1: criteria=[] → RED（空契约不可判通过）', () => {
+  const c = freezeContract({ objective: 'x', criteria: [] })
+  const e = makeEvidence({ contractId: c.id, checks: [] })
+  const d = decide(c, e)
+  assert.equal(d.decision, 'RED')
+  assert.ok(d.reasons.some((r) => r.includes('不可判通过')))
+})
 test('gate: R1 checkIds 为空 → YELLOW', () => {
   const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: [] }] })
   const e = makeEvidence({ contractId: c.id, checks: [] })
@@ -89,7 +96,7 @@ test('gate: R2 check 失败 → RED 且 reproCmd 非空', () => {
   assert.ok(d.reproCmd && d.reproCmd.length > 0)
   assert.ok(d.reasons.some((r) => r.includes('npm test')))
 })
-test('H2: reproCmd 可被 sh -c 执行且退出非 0（非注释行）', () => {
+test('H2: reproCmd 可被 sh -c 执行且退出非 0（非注释行）', (t) => {
   const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
   // 非 exec 类型失败 check 无 cmd 是合法的，触发 gate 的 reproCmd 兜底
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false }] })
@@ -97,7 +104,11 @@ test('H2: reproCmd 可被 sh -c 执行且退出非 0（非注释行）', () => {
   assert.equal(d.decision, 'RED')
   assert.ok(d.reproCmd && d.reproCmd.trim().length > 0)
   assert.ok(!d.reproCmd.trim().startsWith('#'), 'reproCmd 不能是注释')
+  // P1-2：先探测 sh，不可用则 skip（不能把环境缺 sh 当成 reproCmd 失败）
+  const probe = spawnSync('sh', ['-c', 'true'], { encoding: 'utf8' })
+  if (probe.error) { t.skip('sh 不可用'); return }
   const r = spawnSync('sh', ['-c', d.reproCmd], { encoding: 'utf8' })
+  assert.equal(r.error, undefined, 'sh 执行 reproCmd 不应报错')
   assert.notEqual(r.status, 0, `reproCmd 应退出非 0，实际 ${r.status}`)
 })
 test('H2: exec 失败 check 缺 cmd 在 evidence 层被拒（策略非法）', () => {
@@ -123,4 +134,22 @@ test('schema: safeParse 通过返回 data', () => {
 test('schema: safeParse 拒绝非法枚举', () => {
   const s = z.object({ decision: z.enum(['GREEN', 'YELLOW', 'RED']) })
   assert.equal(s.safeParse({ decision: 'PURPLE' }).success, false)
+})
+
+// ── P1-4 · parsePlanFromOutput 取最后一个 json 块 ────────────────────
+test('P1-4: 两个 json 块时取后者的 plan', async () => {
+  const { parsePlanFromOutput } = await import('../lib/adapter.js')
+  const out = [
+    '```json', '{"plan":[{"title":"旧计划"}]}', '```',
+    '中间文字',
+    '```json', '{"plan":[{"title":"新计划"},{"title":"收尾"}]}', '```',
+  ].join('\n')
+  const plan = parsePlanFromOutput(out)
+  assert.deepEqual(plan, [{ title: '新计划' }, { title: '收尾' }])
+})
+test('P1-4: buildPrompt 不再内嵌示例 plan', async () => {
+  const { buildPrompt } = await import('../lib/adapter.js')
+  const p = buildPrompt({ task: 'x', outlinePlan: true })
+  assert.ok(!p.includes('第一步'), '不应再内嵌 {"plan":[...]} 示例')
+  assert.match(p, /json 代码块|json 块|plan 数组/)
 })

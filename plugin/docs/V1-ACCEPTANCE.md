@@ -30,8 +30,8 @@
 
 ## 4. 发布与安装验证（2026-11-22 补充）
 
-- **npm**：`dsh-swarm-console@0.1.3` 已发布，`latest` 指向 0.1.3；tarball 逐文件核对通过（16 文件，含 README / LICENSE / icon.svg / docs）
-- **npm 直装已验证**：在 DSH 0.2.2-rc.5 的「插件 → 添加插件」输入包名安装成功，profile 依赖解析为 `^0.1.3`，
+- **npm**：`dsh-swarm-console@0.1.5` 已发布，`latest` 指向 0.1.5；tarball 逐文件核对通过（16 文件，含 README / LICENSE / icon.svg / docs）
+- **npm 直装已验证**：在 DSH 0.2.2-rc.5 的「插件 → 添加插件」输入包名安装成功，profile 依赖解析为 `^0.1.5`，
   安装后 `verify_contract` / `verify_run` / `verify_status` 与三条斜杠命令均可用
 - **Plugins 列表截图**：已由用户补（图标、名称、版本、启用开关齐全）
 - **市场/意向表**：已提交（用户侧）
@@ -42,7 +42,7 @@
 ## 5. 复现命令
 
 ```bash
-npm run gate                                  # 七段门禁一键验证
+npm run gate                                  # 八段门禁一键验证（含 encoding）
 node --test plugin/test/*.test.mjs            # core / verify / gate-skill / commands 单测
 
 # 手动在 DSH 会话里输入（把 <id> 换成 verify_contract 返回的 contractId）

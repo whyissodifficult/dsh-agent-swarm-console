@@ -78,4 +78,11 @@ ok("index.js 不含 from '../'", () => {
   assert.ok(!/from\s+['"]\.\.\//.test(src), '发现越界相对路径 import')
 })
 
+console.log('\n=== P1-5 消重 ===')
+ok('wiring 适配层只剩 re-export（无第二份实现）', () => {
+  const wiring = readFileSync(join(pluginRoot, '..', 'wiring', 'external-agent-adapter.js'), 'utf8')
+  assert.match(wiring, /export \* from '\.\.\/plugin\/lib\/adapter\.js'/)
+  assert.ok(!wiring.includes('export async function callChat'), '不应再有实现代码')
+})
+
 console.log(`\n通过 ${pass} 项 ✅\n`)

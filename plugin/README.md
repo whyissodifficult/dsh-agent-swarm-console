@@ -33,7 +33,7 @@ dsh-swarm-console
 plugin_manager install_bundle dsh-swarm-console
 ```
 
-> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.1.3`，安装后 `verify_*` 工具与三条斜杠命令均可用。
+> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.1.5`，安装后 `verify_*` 工具与三条斜杠命令均可用。
 
 ### 从本地目录安装（已验证）
 
@@ -87,7 +87,7 @@ contract 5bc483324d46 已冻结
 ## 开发与门禁
 
 ```bash
-npm run gate        # probe / selftest / plugin:test / smoke / pack / wiring / dryrun 七段
+npm run gate        # probe / selftest / plugin:test / smoke / pack / wiring / dryrun / encoding 八段
 ```
 
 验收记录见 [`docs/V1-ACCEPTANCE.md`](https://github.com/whyissodifficult/dsh-agent-swarm-console/blob/main/plugin/docs/V1-ACCEPTANCE.md)：包含斜杠命令链路的日志证据（`command/run`、`command/done`）与三条硬规则的反证。

@@ -7,10 +7,13 @@ import { writeSync } from 'node:fs'
 import { makeSafeSpawn, spawnErrorText } from './sandbox-spawn.mjs'
 
 let pass = 0
+let fail = 0
 const ok = (name, fn) => {
   try { fn(); pass++; console.log(`  ✅ ${name}`) }
-  catch (e) { console.error(`  ❌ ${name}: ${e.message}`); process.exitCode = 1 }
+  catch (e) { fail++; console.error(`  ❌ ${name}: ${e.message}`) }
 }
+/** P1-1：显式 skip，不许把「环境没这工具」当成通过 */
+const skip = (name, why) => console.log(`  ⏭️ ${name}（${why}）`)
 
 const eperm = Object.assign(new Error('spawn git EPERM'), { code: 'EPERM' })
 const enoent = Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' })
@@ -82,7 +85,14 @@ console.log('\n=== EPERM 诊断文案 ===')
 }
 
 console.log('\n=== 强制 EPERM：端到端真进程走 fd ===')
-{
+const prevProbe = process.env.WIRING_FORCE_SPAWN_EPERM
+delete process.env.WIRING_FORCE_SPAWN_EPERM
+const gitProbe = makeSafeSpawn()('git', ['--version'])
+if (prevProbe !== undefined) process.env.WIRING_FORCE_SPAWN_EPERM = prevProbe
+const gitAvailable = gitProbe.error === undefined && gitProbe.status === 0
+if (!gitAvailable) {
+  skip('真进程 fd 三项', 'git 不可用')
+} else {
   const prev = process.env.WIRING_FORCE_SPAWN_EPERM
   process.env.WIRING_FORCE_SPAWN_EPERM = '1'
   try {
@@ -126,4 +136,5 @@ console.log('\n=== 不设强制开关：行为不变 ===')
   ok('mode = pipe', () => assert.equal(r.mode, 'pipe'))
 }
 
-console.log(`\n通过 ${pass} 项 ✅\n`)
+console.log(`\n通过 ${pass}/${pass + fail} 项${fail === 0 ? ' ✅' : ' ❌'}\n`)
+if (fail > 0) process.exitCode = 1

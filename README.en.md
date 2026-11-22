@@ -31,7 +31,7 @@ DeepSeek is the default reasoning workhorse; other providers serve as specialist
 
 ## Status
 
-> 🚧 **In design, not yet released** — Enrolled in the DeepSeek Harness plugin creator support program; waiting for the first runnable build.
+> ✅ **0.1.5 released** — npm package install and local-directory install are both verified; the delivery gate and three slash commands work. Canvas still in progress.
 
 - [x] Competitive research & architecture design
 - [x] Design doc finalized (v1.1)

@@ -35,7 +35,7 @@ const p = buildPrompt({
 ok('含任务', p.includes('总结镜头章法'))
 ok('含角色', p.includes('资深影像分析师'))
 ok('含目标', p.includes('分析一批视频'))
-ok('含计划 JSON 格式说明', p.includes('"plan"'))
+ok('含计划 JSON 格式说明', p.includes('plan') && /json.*块|块.*json/i.test(p))
 ok('含 TODO 协议', p.includes('TODO:'))
 
 console.log('\n=== ② 计划解析（agent 输出带 ```json 代码块）===')

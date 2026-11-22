@@ -44,6 +44,7 @@ check('不含 ../ 越界路径', files.every((f) => !f.includes('../')))
 check('含 index.js', files.includes('index.js'))
 check('不含 test/ 路径（测试不进发布包）', files.every((f) => !f.startsWith('test/')))
 check('含 icon.svg（图标已到位，必须是包内相对路径）', files.includes('icon.svg'))
+check('含 policies/code-change.json（0.2.0 policy runner）', files.includes('policies/code-change.json'))
 
 if (fail > 0) {
   console.error(`\n❌ plugin:pack 失败：${fail} 条断言未过`)
