@@ -2,7 +2,7 @@
 
 > **See your AI team work. Trust that it finished.** — A multi-agent orchestration canvas and delivery-verification plugin for DeepSeek Harness.
 
-中文 · [English](README.md)
+[中文](README.md) · English
 
 ---
 
@@ -31,12 +31,12 @@ DeepSeek is the default reasoning workhorse; other providers serve as specialist
 
 ## Status
 
-> ✅ **0.2.2 released** — npm package install and local-directory install are both verified; the delivery gate and three slash commands (session-scoped) work. Source is developing 0.3.0 (breaking contract changes). Canvas still in progress.
+> ✅ **0.4.2 released** — npm package install and local-directory install are both verified; the delivery gate and four slash commands (`/gate-freeze` included) (session-scoped) work. Source is developing 0.3.0 (breaking contract changes). Canvas still in progress.
 
 - [x] Competitive research & architecture design
 - [x] Design doc finalized (v1.1)
-- [ ] P0 · Minimal runnable prototype
-- [ ] P1 · Domestic agent adapter layer
+- [x] P0 · Minimal runnable prototype
+- [x] P1 · Domestic agent adapter layer (`src/` adapter + `wiring/`)
 - [ ] P2 · Delivery gate
 - [ ] P3 · Open-source v0.1
 

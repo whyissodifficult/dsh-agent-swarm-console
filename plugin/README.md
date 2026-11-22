@@ -14,7 +14,7 @@ Agent 说「完成了」，可能只是日志刷屏、产出为零。这个插�
 
 - **冻结契约**：目标 / 约束 / 验收条件写死并哈希成 `contractId`，改一个字就换 id；
 - **证据先于验收**：每条验收条件必须绑定检查项，缺证据最多判 `YELLOW`；
-- **三态判定**：`GREEN` / `YELLOW` / `RED`，`RED` 一定带可复制执行的复现命令；
+- **三态判定**：`GREEN` / `YELLOW` / `RED`；**检查失败导致的 RED 一定带可复制执行的复现命令**（未确认契约 / 未知 id / 未知策略这类结构性 RED 给原因与下一步，不带命令）；
 - **放行只归用户**：由斜杠命令触发，模型中不存在对应工具，无法代批。
 
 ## 安装
@@ -30,11 +30,11 @@ dsh-swarm-console
 也可以直接在会话里让 agent 装（它调用 `plugin_manager`，这不是你能在终端敲的命令）。
 
 > **两个实操坑**
-> 1. `^0.2.x` 的 semver 上限不含 0.3.0：跨次版本升级必须显式写版本（如 `dsh-swarm-console@0.3.3`）。
+> 1. `^0.3.x` 的 semver 上限不含 0.4.0：跨次版本升级必须显式写版本（如 `dsh-swarm-console@0.4.2`）。
 > 2. 若你的 DSH 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（几分钟到半小时）；
 >    急用可从官方源下载 tarball 后用本地文件安装。
 
-> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.3.x`，安装后 `verify_*` 工具与三条斜杠命令均可用。
+> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.4.x`，安装后 `verify_*` 工具与**四条**斜杠命令均可用。
 
 ### 从本地目录安装（已验证）
 
@@ -48,12 +48,13 @@ plugin_manager install_bundle <本包目录的绝对路径>
 ## 快速开始
 
 ```text
+swarm_run         把一个任务交给外部 agent 跑一次（需先配 externalAgents + apiKeyEnv）
 verify_contract   冻结契约（objective / workspaceRoot / criteria / constraints，testCmd 可选）
 verify_run        跑证据校验：checks 是「检查请求」，由插件实际执行
 /gate-freeze      确认契约（仅用户可触发）：/gate-freeze <id|前缀>
 /gate-status      不带参数列出本会话所有契约；带参数看单条（支持 id 前缀，如 7e28）
 /gate-approve     放行：/gate-approve <id|前缀> <证据hash>（仅 GREEN + hash 一致时允许）
-/gate-retry       重算并刷新判定（旧放行标 stale）
+/gate-retry       清空证据并重算（不重跑检查）；旧放行标 stale
 ```
 
 示例：
@@ -65,7 +66,7 @@ contract 7e280e5c4f7e 已冻结（待确认）
 等待用户确认：/gate-freeze 7e280e5c4f7e       ← 契约不经用户确认不能跑
 
 > /gate-freeze 7e28
-契约 7e280e5c4f7e 已由用户确认（confirmed）
+契约 7e280e5c4f7e 已由用户确认（frozen），现在可以执行 verify_run
 
 > verify_run {"contractId":"7e280e5c4f7e","checks":[{"id":"k1","type":"file.exists","path":"README.md"}]}
 门禁 GREEN：全部 1 条验收条件均有通过证据
@@ -85,7 +86,7 @@ contract 7e280e5c4f7e 已冻结（待确认）
 - 契约冻结与内容哈希（`contract.id`）
 - 证据由插件执行：`verify_run` 的 `checks` 是**检查请求**而非结论——`file.exists` 由插件 `existsSync` 判定，`exec` 由插件实际执行；模型自报的 `ok` 一律忽略
 - 证据分级与三态门禁（`GREEN` / `YELLOW` / `RED`）；空契约直接 `RED`
-- `RED` 必带可执行复现命令；缺证据不判通过
+- 检查失败 → `RED` 且带可执行复现命令；缺证据不判通过
 - 契约须用户确认：`/gate-freeze <id>` 之后才能跑 `verify_run`（模型没有对应工具，改不了规矩）
 - 用户专属放行：`/gate-approve` `/gate-retry` `/gate-status`；重跑后旧放行标记 `stale`
 - 外部 agent 适配层（OpenAI 兼容端点，作为原生 subagent run 使用）
@@ -93,7 +94,7 @@ contract 7e280e5c4f7e 已冻结（待确认）
 ⚠️ 两条必须知道的行为：
 
 - **`exec` 检查以当前用户权限执行命令**，等同于你自己在终端敲那条命令。请只把可信命令写进契约，不要接受来源不明的检查请求。
-- **执行期间阻塞宿主**：v0.2 采用同步执行，单条检查最长 120 秒，期间宿主事件循环被占用，界面可能短暂无响应。异步执行排进 0.3。
+- **异步执行**：检查用 `spawn` 异步跑，单条 10 秒超时后被强制终止，超时按失败计入证据；执行期间不阻塞宿主。
 
 尚未实现（不承诺）：
 

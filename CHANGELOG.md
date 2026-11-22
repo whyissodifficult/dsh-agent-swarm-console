@@ -1,5 +1,16 @@
 # 更新日志
 
+## 0.4.2 · 文档与实现对齐（只改文档与描述）
+
+- 包页 README：`exec` 改为「异步 spawn + 10 秒超时」（旧文写的是「同步 120 秒、异步排进 0.3」，与 0.4.0 实现相反）
+- 包页 README：RED 的复现命令限定为「**检查失败导致的** RED」（未确认 / 未知 id / 未知策略这类结构性 RED 不带命令）；
+  命令条数 3 → 4（补 `/gate-freeze`）；补 `swarm_run` 一行；`/gate-retry` 描述改为「清空证据并重算（不重跑检查）」
+- 根 README：版本 0.3.2 → 0.4.2；安装节不再把模型工具 `plugin_manager` 写成终端命令；
+  勾掉已完成里程碑（P2/P3、阶段 3/4）；把画布与能力路由标注为「开发中 / 仅 wiring 生效」；删掉不存在的 `unverified` 状态说法
+- README.en.md：语言切换方向修正（原来 English 指向中文页）、版本与命令数与中文版对齐
+- `package.json` description 去掉 `v0.1` 字样（npm 副标题不再与 0.4.x 冲突）
+
+
 ## 0.4.1 · 修 /gate-freeze 之后 verify_status 报错
 
 - **现象**：刚 `/gate-freeze`、还没跑过 `verify_run` 时，`verify_status` 工具报

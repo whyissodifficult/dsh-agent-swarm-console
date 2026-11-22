@@ -1,8 +1,8 @@
 {
   "name": "dsh-swarm-console",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "type": "module",
-  "description": "Run one external agent from DSH, with a visible gate (v0.1 · 门禁可用，画布开发中).",
+  "description": "Run one external agent from DSH, with a machine-checkable delivery gate (canvas in progress).",
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",

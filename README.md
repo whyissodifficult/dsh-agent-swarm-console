@@ -2,7 +2,7 @@
 
 > **让 AI 团队干活看得见、信得过** —— 一个为 DeepSeek Harness 设计的多智能体可视化协作与交付验证插件。
 
-> ✅ 已发布 `dsh-swarm-console@0.3.2` · 可安装 Host 插件 + 机器可验证的交付门禁
+> ✅ 已发布 `dsh-swarm-console@0.4.2` · 可安装 Host 插件 + 机器可验证的交付门禁（契约须用户确认）
 > 0.3 契约结构（破坏性）：`workspaceRoot` 必填、`testCmd` 白名单、`/gate-approve` 需证据 hash、工作区路径不得越界
 > 已实测：npm 安装（含国内镜像延迟的绕行办法）与本地目录安装两条路径均可用；画布仍在开发中
 
@@ -23,10 +23,10 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 
 ## 它能做什么
 
-- **多 agent 编排画布** —— 每个 agent 一个节点，分叉 / 并行 / 合并画成连线，状态、产物、日志实时可见
+- **多 agent 编排画布**（开发中）—— 每个 agent 一个节点、分叉 / 并行 / 合并画成连线；当前插件只跑单个外部 agent
 - **自然语言驱动** —— 主 agent 用一个命令就能招募团队、规划、执行、总结
-- **交付门禁** —— 每个 agent 收尾必须附证据（改了哪些文件、跑了什么验证），没证据标 `unverified` 不放行
-- **因材施教** —— 按能力标签（推理 / 视觉 / 长上下文 / 本地私有）给 agent 分任务
+- **交付门禁** —— 每条验收条件必须绑定检查项：缺证据判 `YELLOW`、检查失败判 `RED`、未确认/未放行都不算完成
+- **能力标签路由**（仅在 `wiring/` 的接线形态生效，插件本体不读）
 - **低版本友好** —— 运行时能力探测 + 降级，不锁死 DSH 版本
 
 默认以 **DeepSeek** 作为主力推理模型，其他 provider 作为专项补充。
@@ -37,14 +37,12 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 
 **已验证**：从本地目录安装 bundle（`install_bundle` 返回 `application: applied`，插件以 link 方式装入 profile）。
 
-```bash
-# 在 DSH 会话里执行（plugin 为本仓库内的插件目录）
-plugin_manager install_bundle <plugin 绝对路径>
-```
+> `plugin_manager` 是**模型侧工具**，不是 shell 命令：在 DSH 会话里让 agent 执行
+> `plugin_manager install_bundle <plugin 绝对路径>`，或在「插件 → 添加插件」里选本地目录。
 
-**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.3.2`，`verify_*` 与斜杠命令（`/gate-freeze`、`/gate-approve`、`/gate-retry`、`/gate-status`）均可用。
+**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.4.x`，`verify_*` 与斜杠命令（`/gate-freeze`、`/gate-approve`、`/gate-retry`、`/gate-status`）均可用。
 
-> 两个实操坑：① `^0.2.x` 的 semver 上限不含 0.3.0，跨次版本升级必须显式写版本（`install_bundle dsh-swarm-console@0.3.2`）；
+> 两个实操坑：① `^0.3.x` 的 semver 上限不含 0.4.0，跨次版本升级必须显式写版本（让 agent 执行 `plugin_manager install_bundle dsh-swarm-console@0.4.2`）；
 > ② 若 profile 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（通常几分钟到半小时），
 > 急用可从官方源下载 tarball 后用本地文件安装。
 
@@ -60,8 +58,8 @@ plugin_manager install_bundle <plugin 绝对路径>
 - [x] 设计文档定稿（v1.1）
 - [x] P0 · 最小可跑原型
 - [x] P1 · 国内 agent 适配层（`src/` 适配层 + `wiring/` 接线层）
-- [ ] P2 · 交付门禁
-- [ ] P3 · 开源 v0.1
+- [x] P2 · 交付门禁（0.1.0 起，0.4.x 已发布）
+- [x] P3 · 开源与发布（npm `dsh-swarm-console`）
 
 ---
 
@@ -71,12 +69,12 @@ plugin_manager install_bundle <plugin 绝对路径>
 |------|------|------|
 | 阶段1 | 适配层（`src/`）：国内 agent 伪装成原生 run | ✅ |
 | 阶段2 | 接线层（`wiring/`）：把适配层打进 dsh-agent-swarm | ✅ |
-| 阶段3 | 插件化：bundle + 画布 | ⏳ |
-| 阶段4 | 交付门禁：evidence 四态 + 三态 gate | ⏳ |
+| 阶段3 | 插件化：bundle | ✅ |
+| 阶段4 | 交付门禁：三态 gate + 用户确认/放行 | ✅ |
 
 ### 当前状态
 
-插件骨架（`plugin/`）已能以 bundle 装进 DSH 并注册 `swarm_run`；完整形态（画布 + 门禁 UI）仍在开发中。核心两层代码按下面的方式验证：
+`plugin/` 已作为 bundle 装进 DSH 并注册 `swarm_run`、`verify_*` 与四条斜杠命令，交付门禁已发布至 npm；**画布仍在开发中**。核心两层代码按下面的方式验证：
 
 ```bash
 npm test                                  # 适配层自测（32 项）
