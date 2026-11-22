@@ -2,7 +2,7 @@
 
 > **让 AI 团队干活看得见、信得过** —— 一个为 DeepSeek Harness 设计的多智能体可视化协作与交付验证插件。
 
-> ✅ 已发布 `dsh-swarm-console@0.4.2` · 可安装 Host 插件 + 机器可验证的交付门禁（契约须用户确认）
+> ✅ 已发布 `dsh-swarm-console@0.4.4` · 可安装 Host 插件 + 机器可验证的交付门禁（契约须用户确认）
 > 0.3 契约结构（破坏性）：`workspaceRoot` 必填、`testCmd` 白名单、`/gate-approve` 需证据 hash、工作区路径不得越界
 > 已实测：npm 安装（含国内镜像延迟的绕行办法）与本地目录安装两条路径均可用；画布仍在开发中
 
@@ -26,6 +26,7 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 - **多 agent 编排画布**（开发中）—— 每个 agent 一个节点、分叉 / 并行 / 合并画成连线；当前插件只跑单个外部 agent
 - **自然语言驱动** —— 主 agent 用一个命令就能招募团队、规划、执行、总结
 - **交付门禁** —— 每条验收条件必须绑定检查项：缺证据判 `YELLOW`、检查失败判 `RED`、未确认/未放行都不算完成
+- **确认前先看清** —— `/gate-freeze <id>` 先回显契约全文（目标/工作区/测试命令/超时/验收条件），`--yes` 才生效；模型没有对应工具，改不了规矩
 - **能力标签路由**（仅在 `wiring/` 的接线形态生效，插件本体不读）
 - **低版本友好** —— 运行时能力探测 + 降级，不锁死 DSH 版本
 
@@ -42,7 +43,7 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 
 **从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.4.x`，`verify_*` 与斜杠命令（`/gate-freeze`、`/gate-approve`、`/gate-retry`、`/gate-status`）均可用。
 
-> 两个实操坑：① `^0.3.x` 的 semver 上限不含 0.4.0，跨次版本升级必须显式写版本（让 agent 执行 `plugin_manager install_bundle dsh-swarm-console@0.4.2`）；
+> 两个实操坑：① `^0.3.x` 的 semver 上限不含 0.4.0，跨次版本升级必须显式写版本（让 agent 执行 `plugin_manager install_bundle dsh-swarm-console@0.4.4`）；
 > ② 若 profile 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（通常几分钟到半小时），
 > 急用可从官方源下载 tarball 后用本地文件安装。
 

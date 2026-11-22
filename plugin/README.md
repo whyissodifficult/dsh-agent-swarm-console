@@ -30,7 +30,7 @@ dsh-swarm-console
 也可以直接在会话里让 agent 装（它调用 `plugin_manager`，这不是你能在终端敲的命令）。
 
 > **两个实操坑**
-> 1. `^0.3.x` 的 semver 上限不含 0.4.0：跨次版本升级必须显式写版本（如 `dsh-swarm-console@0.4.2`）。
+> 1. `^0.3.x` 的 semver 上限不含 0.4.0：跨次版本升级必须显式写版本（如 `dsh-swarm-console@0.4.4`）。
 > 2. 若你的 DSH 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（几分钟到半小时）；
 >    急用可从官方源下载 tarball 后用本地文件安装。
 
