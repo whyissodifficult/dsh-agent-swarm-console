@@ -33,6 +33,9 @@ dsh-swarm-console
 plugin_manager install_bundle dsh-swarm-console
 ```
 
+> 升级到新的次版本（0.2.x → 0.3.x）必须显式指定版本：`install_bundle dsh-swarm-console@0.3.1`，
+> 因为 `^0.2.x` 的 semver 上限不含 0.3.0。
+
 > 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.2.2`，安装后 `verify_*` 工具与三条斜杠命令均可用。
 
 ### 从本地目录安装（已验证）
@@ -47,24 +50,29 @@ plugin_manager install_bundle <本包目录的绝对路径>
 ## 快速开始
 
 ```text
-verify_contract   冻结一个契约（objective / constraints / criteria）
-verify_run        跑证据校验，得到 GREEN / YELLOW / RED
-/gate-status      不带参数列出本会话所有契约；带参数看单条（支持 id 前缀，如 1578）
-/gate-approve     放行（仅 GREEN 允许，用户手动输入）
-/gate-retry       重算并刷新判定
+verify_contract   冻结契约（objective / workspaceRoot / criteria / constraints，testCmd 可选）
+verify_run        跑证据校验：checks 是「检查请求」，由插件实际执行
+/gate-status      不带参数列出本会话所有契约；带参数看单条（支持 id 前缀，如 7e28）
+/gate-approve     放行：/gate-approve <id|前缀> <证据hash>（仅 GREEN + hash 一致时允许）
+/gate-retry       重算并刷新判定（旧放行标 stale）
 ```
 
 示例：
 
 ```text
-> verify_contract {"objective":"给 README 加安装节","criteria":[{"id":"c1","text":"安装节存在","checkIds":["k1"]}]}
-contract 5bc483324d46 已冻结
+> verify_contract {"objective":"给 README 加安装节","workspaceRoot":"D:/my-project",
+                   "criteria":[{"id":"c1","text":"安装节存在","checkIds":["k1"]}]}
+contract 7e280e5c4f7e 已冻结
 
-> verify_run {"contractId":"5bc483324d46","checks":[{"id":"k1","type":"file.exists","ok":true}]}
+> verify_run {"contractId":"7e280e5c4f7e","checks":[{"id":"k1","type":"file.exists","path":"README.md"}]}
 门禁 GREEN：全部 1 条验收条件均有通过证据
 
-> /gate-approve 5bc483324d46
-契约 5bc483324d46 已由用户放行（approved）
+> /gate-status 7e28
+契约 7e280e5c4f7e：最近决定 GREEN @ …；尚未放行
+证据：380cdbc5b3ed
+
+> /gate-approve 7e28 380cdbc5b3ed
+契约 7e280e5c4f7e 已由用户放行（approved）
 ```
 
 ## 能力与限制

@@ -62,6 +62,10 @@ export function decide(contract, evidence) {
 
 /** 从失败 check 构造可复制执行的最小复现命令（按检查类型给对应命令）。 */
 function reproFor(check) {
+  // 被白名单拒绝的命令本身不能当复现（它可能退出 0），给可执行提示
+  if (check.rejected === true) {
+    return `echo "exec 命令未在契约 testCmd 中声明，已拒绝执行" && exit 1`
+  }
   if (typeof check.cmd === 'string' && check.cmd.trim() !== '') return check.cmd
   // P1-3 · file.exists：用 node -e 判断，跨平台（不依赖 sh / test -f）；
   // 有 absPath 时写绝对路径，保证命令在任何 cwd 下都指向同一文件。

@@ -1,5 +1,14 @@
 # 更新日志
 
+## 0.3.1 · 文档与复现命令对齐 0.3.0 语义
+
+- README 示例按 0.3.0 重写：`verify_contract` 带 `workspaceRoot`、`verify_run` 用相对路径检查、
+  `/gate-status` 输出「证据：<hash>」、`/gate-approve <id> <hash>`
+- README 安装节补 semver 提示：`^0.2.x` 装不到 0.3.x，升级需显式指定版本
+- `exec` 被 `testCmd` 白名单拒绝时，复现命令不再回显那条被拒命令（它可能退出 0），
+  改为可执行的 `echo … && exit 1` 提示；`checks[].rejected` 参与 evidence 规范化
+
+
 ## 0.3.0 · 门禁可信度加固（破坏性）
 
 **破坏性变更（契约结构）：**

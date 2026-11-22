@@ -70,7 +70,7 @@ export function runChecks(requests, deps = {}) {
       if (typeof req.cmd !== 'string' || req.cmd === '') return invalid('exec 必带 cmd')
       // P0-4：命令白名单——必须与契约 testCmd 完全相等
       if (typeof deps.testCmd !== 'string' || deps.testCmd === '' || req.cmd !== deps.testCmd) {
-        return { id, type, ok: false, cmd: req.cmd, detail: 'exec 命令未在契约中声明为 testCmd，已拒绝' }
+        return { id, type, ok: false, cmd: req.cmd, rejected: true, detail: 'exec 命令未在契约中声明为 testCmd，已拒绝' }
       }
       const r = exec(req.cmd, { cwd: workspaceRoot })
       const ok = r.error === undefined && r.status === 0

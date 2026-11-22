@@ -165,3 +165,13 @@ test('H2: file.exists 复现命令用绝对路径（换 cwd 也指向同一文�
 function require_checks() {
   return checksModule
 }
+
+test('H2: exec 被白名单拒绝时，复现命令不是那条被拒的命令', () => {
+  const ws = process.cwd().replace(/\\/g, '/')
+  const c = freezeContract({ objective: 'x', workspaceRoot: ws, criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
+  const { checks } = checksModule.runChecks([{ id: 'k1', type: 'exec', cmd: 'exit 0' }], { workspaceRoot: ws })
+  const d = decide(c, makeEvidence({ contractId: c.id, checks }))
+  assert.equal(d.decision, 'RED')
+  assert.ok(!/复现：exit 0/.test('复现：' + d.reproCmd), '不能把被拒命令当复现：' + d.reproCmd)
+  assert.match(d.reproCmd, /exit 1/, '应是可执行且退出非 0 的提示命令')
+})
