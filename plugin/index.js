@@ -153,8 +153,8 @@ function registerGateCommands(ctx) {
       },
       {
         name: 'gate-status',
-        description: '查看某契约的最近门禁决定与放行状态',
-        input: { hint: '<contractId>' },
+        description: '查看门禁状态：不带参数列出本会话所有契约，带参数看单条（支持 id 前缀）',
+        input: { hint: '[<contractId|前缀>]' },
         handler: ({ agent, rawInput }) => gateStatus({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
       },
     ]

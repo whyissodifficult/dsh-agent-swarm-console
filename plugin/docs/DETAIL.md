@@ -50,6 +50,12 @@ capabilityRouting: true
 
 **`gate-retry` 语义**：用空证据重算，结果必为 YELLOW（提示补证据）；它只刷新决定时间戳，不伪造通过证据。要转 GREEN 需重新执行 `verify_run` 并提供真实证据。
 
+## 命令速查
+
+- `/gate-status`：不带参数列出本会话所有契约；带参数（或 id 前缀）查看单条
+- `/gate-approve <id|前缀>`：仅 GREEN 可放行；证据 hash 不一致会拒绝
+- `/gate-retry <id|前缀>`：重跑校验并把旧放行标为 `stale`
+
 ## 已知限制
 
 - **`exec` 检查以当前用户权限执行命令**：等同于你在终端敲那条命令。只把可信命令写进契约；不要接受来源不明的检查请求。

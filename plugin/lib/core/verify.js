@@ -126,9 +126,25 @@ export function newStores() {
 // 命令只能由用户触发（斜杠命令不走模型工具），H3 由结构保证，不靠 act 守卫。
 // 状态与 verify 同源：契约在 contracts，最近决定在 runs，approved 也写回 runs。
 
+/**
+ * 契约 id 解析：支持精确 id 与唯一前缀。
+ * @returns {{id?:string, error?:string}}
+ */
+export function resolveContractId(input, store = contracts) {
+  const raw = String(input ?? '').trim()
+  if (raw === '') return { error: '缺少契约 id' }
+  if (store.has(raw)) return { id: raw }
+  const hits = [...store.keys()].filter((k) => k.startsWith(raw))
+  if (hits.length === 1) return { id: hits[0] }
+  if (hits.length === 0) return { error: `未知契约 ${raw}` }
+  return { error: `前缀 ${raw} 命中多个契约：${hits.join(', ')}` }
+}
+
 /** /gate-approve：非 GREEN 拒绝；证据过期拒绝；GREEN 记 approved 返回成功。 */
 export function gateApprove({ contractId, sessionId, expectedHash }, store = contracts, runStore = runs) {
-  if (!store.has(contractId)) return { kind: 'error', text: `未知契约 ${contractId}` }
+  const resolved = resolveContractId(contractId, store)
+  if (resolved.error) return { kind: 'error', text: resolved.error }
+  contractId = resolved.id
   const rk = runKey(contractId, sessionId)
   const r = runStore.get(rk)
   if (!r) return { kind: 'error', text: '尚无门禁决定，请先执行 verify_run' }
@@ -145,7 +161,9 @@ export function gateApprove({ contractId, sessionId, expectedHash }, store = con
 
 /** /gate-retry：空证据重算 → YELLOW；保留 approved 但置 stale、清 approvedAt。 */
 export function gateRetry({ contractId, sessionId }, store = contracts, runStore = runs) {
-  if (!store.has(contractId)) return { kind: 'error', text: `未知契约 ${contractId}` }
+  const resolved = resolveContractId(contractId, store)
+  if (resolved.error) return { kind: 'error', text: resolved.error }
+  contractId = resolved.id
   const rk = runKey(contractId, sessionId)
   const before = runStore.get(rk)
   const wasApproved = before?.approved === true
@@ -161,14 +179,33 @@ export function gateRetry({ contractId, sessionId }, store = contracts, runStore
   }
 }
 
-/** /gate-status：最近决定 + 时间 + 是否 approved / stale；未知契约 error。 */
-export function gateStatus({ contractId, sessionId }, store = contracts, runStore = runs) {
-  if (!store.has(contractId)) return { kind: 'error', text: `未知契约 ${contractId}` }
-  const r = runStore.get(runKey(contractId, sessionId))
-  if (!r) return { kind: 'success', text: `契约 ${contractId} 尚无门禁决定` }
+/** /gate-status：无参列出当前会话契约；有参（支持前缀）显示单条详情。 */
+export function gateStatus({ contractId, sessionId } = {}, store = contracts, runStore = runs) {
+  const raw = String(contractId ?? '').trim()
+
+  // 无参：列出全部契约（按最近决定时间倒序）
+  if (raw === '') {
+    const rows = [...store.keys()].map((id) => ({ id, run: runStore.get(runKey(id, sessionId)) }))
+    if (rows.length === 0) return { kind: 'success', text: '当前会话还没有冻结任何契约（先执行 verify_contract）' }
+    rows.sort((a, b) => String(b.run?.at ?? '').localeCompare(String(a.run?.at ?? '')))
+    const lines = rows.map(({ id, run }) => {
+      if (!run) return `- ${id}  未跑校验`
+      const flags = [run.decision]
+      if (run.stale === true) flags.push('[stale]')
+      flags.push(run.approved === true ? '已放行' : '尚未放行')
+      return `- ${id}  ${flags.join(' ')}  @ ${run.at ?? '-'}`
+    })
+    return { kind: 'success', text: [`当前会话契约（${rows.length}）：`, ...lines].join('\n') }
+  }
+
+  const resolved = resolveContractId(raw, store)
+  if (resolved.error) return { kind: 'error', text: resolved.error }
+  const id = resolved.id
+  const r = runStore.get(runKey(id, sessionId))
+  if (!r) return { kind: 'success', text: `契约 ${id} 尚无门禁决定` }
   const approved = r.approved === true
   const stale = r.stale === true
-  const head = `契约 ${contractId}：最近决定 ${r.decision} @ ${r.at}${stale ? ' [stale]' : ''}${approved ? `；已由 ${r.by ?? 'user'} 放行${stale ? '（已过期）' : ` @ ${r.approvedAt}`}` : '；尚未放行'}`
+  const head = `契约 ${id}：最近决定 ${r.decision} @ ${r.at}${stale ? ' [stale]' : ''}${approved ? `；已由 ${r.by ?? 'user'} 放行${stale ? '（已过期）' : ` @ ${r.approvedAt}`}` : '；尚未放行'}`
   // H2 可见性：RED 必须把复现命令亮给用户，YELLOW 必须把缺失证据亮出来
   const extra = []
   if (r.reproCmd) extra.push(`复现：${r.reproCmd}`)

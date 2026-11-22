@@ -49,7 +49,7 @@ plugin_manager install_bundle <本包目录的绝对路径>
 ```text
 verify_contract   冻结一个契约（objective / constraints / criteria）
 verify_run        跑证据校验，得到 GREEN / YELLOW / RED
-/gate-status      查看某个契约最近一次判定
+/gate-status      不带参数列出本会话所有契约；带参数看单条（支持 id 前缀，如 1578）
 /gate-approve     放行（仅 GREEN 允许，用户手动输入）
 /gate-retry       重算并刷新判定
 ```

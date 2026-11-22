@@ -27,9 +27,9 @@ function fakeCtx(services = {}) {
   return { ctx: base, registered }
 }
 
-function makeContract(stores, decision = 'GREEN') {
+function makeContract(stores, decision = 'GREEN', objective = '命令测试') {
   const { contractId } = verifyContract({
-    objective: '命令测试', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }],
+    objective, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }],
   }, stores.contracts)
   stores.runs.set(runKey(contractId), { decision, at: '2026-11-21T00:00:00Z', evidenceHash: 'x' })
   return contractId
@@ -152,4 +152,39 @@ test('P0-4: 同 contractId 不同 session 状态隔离', () => {
   assert.match(a.text, /已由 user 放行/)
   assert.match(b.text, /尚无门禁决定|尚未放行/)
   assert.notEqual(s.runs.get(runKey(id, 's1')), s.runs.get(runKey(id, 's2')))
+})
+
+test('gate-status 无参：列出当前会话全部契约', () => {
+  const s = newStores()
+  const a = makeContract(s, 'GREEN', '命令测试-甲')
+  const b = makeContract(s, 'RED', '命令测试-乙')
+  const r = gateStatus({}, s.contracts, s.runs)
+  assert.equal(r.kind, 'success')
+  assert.match(r.text, /当前会话契约（2）/)
+  assert.ok(r.text.includes(a) && r.text.includes(b), '两条契约都应列出')
+})
+
+test('gate-status 支持 id 前缀（唯一命中）', () => {
+  const s = newStores()
+  const id = makeContract(s, 'GREEN')
+  const r = gateStatus({ contractId: id.slice(0, 4) }, s.contracts, s.runs)
+  assert.equal(r.kind, 'success')
+  assert.match(r.text, new RegExp(`契约 ${id}`))
+})
+
+test('gate-status 前缀歧义 → error 并列出候选', () => {
+  const s = newStores()
+  // 构造两个同前缀契约：直接往 store 塞
+  s.contracts.set('abcd11111111', { contract: {} })
+  s.contracts.set('abcd22222222', { contract: {} })
+  const r = gateStatus({ contractId: 'abcd' }, s.contracts, s.runs)
+  assert.equal(r.kind, 'error')
+  assert.match(r.text, /命中多个契约/)
+})
+
+test('gate-approve 也接受前缀', () => {
+  const s = newStores()
+  const id = makeContract(s, 'GREEN')
+  const r = gateApprove({ contractId: id.slice(0, 6) }, s.contracts, s.runs)
+  assert.equal(r.kind, 'success', JSON.stringify(r))
 })
