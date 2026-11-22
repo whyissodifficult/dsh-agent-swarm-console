@@ -213,3 +213,24 @@ test('P0: 刚 freeze、还没 verify_run 时 verifyStatus 可 JSON 序列化（�
   assert.deepEqual(bad, [], '这些字段值为 undefined：' + bad.join(', '))
   assert.equal('decision' in st, false, '尚未跑过时不应带 decision 字段')
 })
+
+test('P0-B: 符号链接/junction 指向工作区外 → RED（realpath 边界）', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-'))
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'out-'))
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'x')
+  let linked = false
+  try {
+    fs.symlinkSync(outside, path.join(root, 'link'), 'junction')
+    linked = true
+  } catch { /* Windows 无权限建链接时跳过 */ }
+  if (!linked) return
+  const { checks } = await checksModule.runChecks(
+    [{ id: 'k1', type: 'file.exists', path: 'link/secret.txt' }], { workspaceRoot: root })
+  assert.equal(checks[0].ok, false, JSON.stringify(checks[0]))
+  assert.match(checks[0].detail, /符号链接/, checks[0].detail)
+  fs.rmSync(root, { recursive: true, force: true })
+  fs.rmSync(outside, { recursive: true, force: true })
+})

@@ -9,7 +9,7 @@
  *
  * 模型传入的 ok 一律忽略，并记一条 warning。
  */
-import { existsSync as fsExistsSync } from 'node:fs'
+import { existsSync as fsExistsSync, realpathSync as fsRealpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { isAbsolute, relative, resolve } from 'node:path'
 
@@ -23,6 +23,7 @@ const EXEC_TIMEOUT_MS = 10000
 export async function runChecks(requests, deps = {}) {
   const workspaceRoot = deps.workspaceRoot
   const existsSync = deps.existsSync ?? fsExistsSync
+  const realpathSync = deps.realpathSync ?? fsRealpathSync
   const exec = deps.exec ?? runExecAsync
 
   const warnings = []
@@ -63,6 +64,15 @@ export async function runChecks(requests, deps = {}) {
       const rel = relative(workspaceRoot, absPath)
       if (rel.startsWith('..') || isAbsolute(rel)) {
         checks.push({ id, type, ok: false, path: req.path, absPath, detail: `检查路径越出 workspaceRoot：${req.path}` }); continue
+      }
+      // P0-B：符号链接 / junction 挡不住词法校验——realpath 之后再比一次
+      let realRoot = workspaceRoot
+      let realPath = absPath
+      try { realRoot = realpathSync(workspaceRoot) } catch { /* workspaceRoot 不可解析时按词法处理 */ }
+      try { realPath = realpathSync(absPath) } catch { /* 路径不存在或链接断开：保持词法路径 */ }
+      const relReal = relative(realRoot, realPath)
+      if (relReal.startsWith('..') || isAbsolute(relReal)) {
+        checks.push({ id, type, ok: false, path: req.path, absPath, detail: `检查路径经符号链接解析后越出 workspaceRoot：${req.path}` }); continue
       }
       const ok = existsSync(absPath) === true
       checks.push({ id, type, ok, path: req.path, absPath, detail: ok ? `文件存在：${req.path}` : `文件不存在：${req.path}` })

@@ -1,5 +1,14 @@
 # 更新日志
 
+## 0.4.3 · 符号链接绕过工作区边界（安全）
+
+- **问题**：`workspaceRoot` 内的 junction / 符号链接能指向工作区外，`file.exists` 对
+  `link/secret.txt` 会判存在——词法路径校验挡不住物理跳转（实测 junction 可复现）
+- **修复**：解析真实路径后再比一次边界（`realpath(workspaceRoot)` vs `realpath(target)`），
+  越界判 RED「检查路径经符号链接解析后越出 workspaceRoot」
+- 回归测试：在临时目录建 junction 指向外部，断言 RED；无权限建链接时跳过
+
+
 ## 0.4.2 · 文档与实现对齐（只改文档与描述）
 
 - 包页 README：`exec` 改为「异步 spawn + 10 秒超时」（旧文写的是「同步 120 秒、异步排进 0.3」，与 0.4.0 实现相反）
