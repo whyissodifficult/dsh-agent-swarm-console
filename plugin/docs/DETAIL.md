@@ -38,7 +38,7 @@ capabilityRouting: true
 
 ## verify 三工具（0.3.0 契约结构）
 
-- `verify_contract({objective, workspaceRoot, testCmd?, policyId?, constraints, criteria})` → `{contractId}`
+- `verify_contract({objective, workspaceRoot, testCmd?, policyId?, constraints, criteria})` → `{contractId}`，**初始为待确认**（需 `/gate-freeze`）
   - **`workspaceRoot` 必填**：绝对路径、必须存在且是目录；所有检查以它为根
   - `testCmd` 可选：`exec` 检查**唯一允许**的命令；不声明就拒绝一切 `exec`
   - `policyId` 可选：只有显式声明，且策略的检查 id 全部被契约 `checkIds` 覆盖时才启用
@@ -52,7 +52,9 @@ capabilityRouting: true
 
 **策略层（`code-change`）当前只生成 `testCmd` 检查**。`exists` / `workspace.diff` 已从策略声明中删除——需要文件检查时由调用方在 `checks` 里显式给出。
 
-**放行入口**：斜杠命令 `/gate-approve <id|前缀> <evidenceHash>`、`/gate-retry <id|前缀>`、`/gate-status [id|前缀]`（不带参数列出**本会话**全部契约）。放行只能由用户触发——斜杠命令由用户在交互界面直接输入，图中没有对应的模型工具，模型无法代替用户调用，H3（放行只能由用户触发）由这个结构保证，不依赖运行时身份判断。非 GREEN 时 `/gate-approve` 直接拒绝并提示先 retry。门禁卡（action-cards）为可选增强，仅在挂载该服务的 profile 生效。
+**契约确认（0.4.0）**：`verify_contract` 冻结后是「待确认」状态，`verify_run` 会直接判 RED 并提示先 `/gate-freeze <id>`。确认只能由用户通过斜杠命令完成——模型没有对应工具，这是把「定规矩」的权力从模型手里收回来的结构保证。
+
+**放行入口**：斜杠命令 `/gate-freeze <id|前缀>`、`/gate-approve <id|前缀> <evidenceHash>`、`/gate-retry <id|前缀>`、`/gate-status [id|前缀]`（不带参数列出**本会话**全部契约）。放行只能由用户触发——斜杠命令由用户在交互界面直接输入，图中没有对应的模型工具，模型无法代替用户调用，H3（放行只能由用户触发）由这个结构保证，不依赖运行时身份判断。非 GREEN 时 `/gate-approve` 直接拒绝并提示先 retry。门禁卡（action-cards）为可选增强，仅在挂载该服务的 profile 生效。
 
 每次命令执行会在会话日志留下 `command/run` 与 `command/done` 事件，可作为放行/重试的机器证据。
 
@@ -62,14 +64,15 @@ capabilityRouting: true
 
 ## 命令速查
 
-- `/gate-status`：不带参数列出本会话所有契约；带参数（或 id 前缀）查看单条
+- `/gate-freeze <id|前缀>`：由用户确认契约；确认后才能 `verify_run`
+- `/gate-status`：不带参数列出本会话所有契约（含待确认/已确认）；带参数（或 id 前缀）查看单条
 - `/gate-approve <id|前缀> <evidenceHash>`：**必须**带证据 hash 自证；缺参数会提示先 `/gate-status` 复制；非 GREEN 或 hash 不一致均拒绝
 - `/gate-retry <id|前缀>`：重跑校验并把旧放行标为 `stale`
 
 ## 已知限制
 
 - **`exec` 检查以当前用户权限执行命令**：等同于你在终端敲那条命令。只把可信命令写进契约；不要接受来源不明的检查请求。
-- **同步执行会阻塞宿主**：v0.2 的检查由 `spawnSync` 同步跑，单条最长 120 秒，期间宿主事件循环被占用，界面可能短暂无响应。异步执行排进 0.3。
+- **exec 检查异步执行**（0.4.0）：`spawn` + 10 秒超时后强制终止，不再阻塞宿主事件循环；超时按失败计入证据。
 - 证据存**进程内 Map**，DSH 重启即丢，不做持久化（重启后 `/gate-status` 返回「未知契约」）
 - 还没有画布 —— 看不到 agent 节点、连线或过程可视化
 - 多阶段评审状态机未实现

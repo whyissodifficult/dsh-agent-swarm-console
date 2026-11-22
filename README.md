@@ -42,7 +42,7 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 plugin_manager install_bundle <plugin 绝对路径>
 ```
 
-**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.3.2`，`verify_*` 与三条斜杠命令均可用。
+**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.3.2`，`verify_*` 与斜杠命令（`/gate-freeze`、`/gate-approve`、`/gate-retry`、`/gate-status`）均可用。
 
 > 两个实操坑：① `^0.2.x` 的 semver 上限不含 0.3.0，跨次版本升级必须显式写版本（`install_bundle dsh-swarm-console@0.3.2`）；
 > ② 若 profile 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（通常几分钟到半小时），

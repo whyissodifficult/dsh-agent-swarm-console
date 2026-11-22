@@ -9,106 +9,106 @@ import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
 import * as checksModule from '../lib/core/checks.js'
-import { verifyContract, verifyRun, newStores } from '../lib/core/verify.js'
+import { verifyContract, verifyRun, newStores, gateFreeze } from '../lib/core/verify.js'
 import { z } from '../lib/core/mini-schema.js'
 
 const ROOT = process.cwd()
 
 // ---------- contract.js ----------
-test('contract: 生成 12 位十六进制 id', () => {
+test('contract: 生成 12 位十六进制 id', async () => {
   const c = freezeContract({ objective: '做一件事', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: '有证据', checkIds: ['t'] }] })
   assert.match(c.id, /^[0-9a-f]{12}$/)
 })
-test('contract: 同内容同 id', () => {
+test('contract: 同内容同 id', async () => {
   const a = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   const b = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   assert.equal(a.id, b.id)
 })
-test('contract: 改 objective 换 id', () => {
+test('contract: 改 objective 换 id', async () => {
   const a = freezeContract({ objective: 'x', workspaceRoot: ROOT })
   assert.notEqual(a.id, freezeContract({ objective: 'y', workspaceRoot: ROOT }).id)
 })
-test('contract: 缺 workspaceRoot / 相对路径 / 不存在 → throw', () => {
+test('contract: 缺 workspaceRoot / 相对路径 / 不存在 → throw', async () => {
   assert.throws(() => freezeContract({ objective: 'x' }), /workspaceRoot 必填/)
   assert.throws(() => freezeContract({ objective: 'x', workspaceRoot: 'relative/dir' }), /必须是绝对路径/)
   assert.throws(() => freezeContract({ objective: 'x', workspaceRoot: ROOT + '/__nope__' }), /不存在/)
 })
-test('contract: 空 objective → throw', () => {
+test('contract: 空 objective → throw', async () => {
   assert.throws(() => freezeContract({ objective: '', workspaceRoot: ROOT }), /objective/)
 })
-test('P0-1 前提: policyId 不再默认填充', () => {
+test('P0-1 前提: policyId 不再默认填充', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT })
   assert.equal(c.policyId, undefined)
   const d = freezeContract({ objective: 'x', workspaceRoot: ROOT, policyId: 'code-change' })
   assert.equal(d.policyId, 'code-change')
 })
-test('contract: validateContract 拦住缺 checkIds', () => {
+test('contract: validateContract 拦住缺 checkIds', async () => {
   const errs = validateContract({ id: 'abc123456789', objective: 'x', constraints: [], workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't' }] })
   assert.ok(errs.some((e) => e.includes('checkIds')))
 })
 
 // ---------- evidence.js ----------
-test('evidence: E2 + verified', () => {
+test('evidence: E2 + verified', async () => {
   const e = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'exec', ok: true, cmd: 'npm test', exitCode: 0 }] })
   assert.equal(e.level, 'E2')
   assert.equal(e.status, 'verified')
 })
-test('evidence: 无 checks → E0 + partial', () => {
+test('evidence: 无 checks → E0 + partial', async () => {
   const e = makeEvidence({ contractId: 'abc' })
   assert.equal(e.level, 'E0')
   assert.equal(e.status, 'partial')
 })
-test('evidence: failed 由失败 check 推断', () => {
+test('evidence: failed 由失败 check 推断', async () => {
   const e = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'exec', ok: false, cmd: 'npm test' }] })
   assert.equal(e.status, 'failed')
 })
-test('evidence: hash 稳定且随内容变化', () => {
+test('evidence: hash 稳定且随内容变化', async () => {
   const a = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'x', ok: true }] })
   const b = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'x', ok: false }] })
   assert.match(evidenceHash(a), /^[0-9a-f]{12}$/)
   assert.notEqual(evidenceHash(a), evidenceHash(b))
 })
-test('evidence: validateEvidence 拦住非布尔 ok', () => {
+test('evidence: validateEvidence 拦住非布尔 ok', async () => {
   const e = makeEvidence({ contractId: 'abc' })
   e.checks = [{ id: 't', type: 'x', ok: 'yes' }]
   assert.ok(validateEvidence(e).some((x) => x.includes('ok 必须是布尔')))
 })
 
 // ---------- gate.js ----------
-test('gate: 全通过 → GREEN', () => {
+test('gate: 全通过 → GREEN', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'exec', ok: true, cmd: 'npm test' }] })
   assert.equal(decide(c, e).decision, 'GREEN')
 })
-test('P0-1: criteria=[] → RED 且理由含「不可判通过」', () => {
+test('P0-1: criteria=[] → RED 且理由含「不可判通过」', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [] })
   const d = decide(c, makeEvidence({ contractId: c.id, checks: [] }))
   assert.equal(d.decision, 'RED')
   assert.ok(d.reasons.some((r) => r.includes('不可判通过')))
 })
-test('gate: checkIds 为空 → YELLOW', () => {
+test('gate: checkIds 为空 → YELLOW', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: [] }] })
   const d = decide(c, makeEvidence({ contractId: c.id, checks: [] }))
   assert.equal(d.decision, 'YELLOW')
   assert.ok(d.missing.some((m) => m.includes('未绑定 checkIds')))
 })
-test('gate: 缺对应 checks → YELLOW', () => {
+test('gate: 缺对应 checks → YELLOW', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   assert.equal(decide(c, makeEvidence({ contractId: c.id, checks: [] })).decision, 'YELLOW')
 })
-test('gate: check 失败 → RED，reproCmd 取 cmd', () => {
+test('gate: check 失败 → RED，reproCmd 取 cmd', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'exec', ok: false, cmd: 'npm test', detail: 'exit 1' }] })
   const d = decide(c, e)
   assert.equal(d.decision, 'RED')
   assert.equal(d.reproCmd, 'npm test')
 })
-test('gate: 失败优先于缺证据', () => {
+test('gate: 失败优先于缺证据', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: [] }, { id: 'AC2', text: 'u', checkIds: ['k'] }] })
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'file.exists', ok: false }] })
   assert.equal(decide(c, e).decision, 'RED')
 })
-test('P1-3: file.exists 的 reproCmd 用 node -e，跨平台退出非 0', () => {
+test('P1-3: file.exists 的 reproCmd 用 node -e，跨平台退出非 0', async () => {
   const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
   const e = makeEvidence({
     contractId: c.id,
@@ -126,7 +126,7 @@ test('P1-3: file.exists 的 reproCmd 用 node -e，跨平台退出非 0', () => 
 })
 
 // ---------- mini-schema ----------
-test('schema: safeParse 通过 / 拒绝非法枚举', () => {
+test('schema: safeParse 通过 / 拒绝非法枚举', async () => {
   const s = z.object({ decision: z.enum(['GREEN', 'YELLOW', 'RED']), reasons: z.array(z.string()) })
   assert.equal(s.safeParse({ decision: 'GREEN', reasons: ['ok'] }).success, true)
   assert.equal(s.safeParse({ decision: 'PURPLE' }).success, false)
@@ -149,11 +149,11 @@ test('P2-4: parseResult 只取 RESULT 后第一行', async () => {
   assert.equal(parseResult('RESULT: ok\n补充说明\n更多'), 'ok')
 })
 
-test('H2: file.exists 复现命令用绝对路径（换 cwd 也指向同一文件）', () => {
+test('H2: file.exists 复现命令用绝对路径（换 cwd 也指向同一文件）', async () => {
   const ws = process.cwd().replace(/\\/g, '/')
   const c = freezeContract({ objective: 'x', workspaceRoot: ws, criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
   const { runChecks } = require_checks()
-  const { checks } = runChecks([{ id: 'k1', type: 'file.exists', path: 'no/such/file.txt' }], { workspaceRoot: ws })
+  const { checks } = await runChecks([{ id: 'k1', type: 'file.exists', path: 'no/such/file.txt' }], { workspaceRoot: ws })
   const e = makeEvidence({ contractId: c.id, checks })
   const d = decide(c, e)
   assert.equal(d.decision, 'RED')
@@ -167,18 +167,18 @@ function require_checks() {
   return checksModule
 }
 
-test('H2: exec 被白名单拒绝时，复现命令不是那条被拒的命令', () => {
+test('H2: exec 被白名单拒绝时，复现命令不是那条被拒的命令', async () => {
   const ws = process.cwd().replace(/\\/g, '/')
   const c = freezeContract({ objective: 'x', workspaceRoot: ws, criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
-  const { checks } = checksModule.runChecks([{ id: 'k1', type: 'exec', cmd: 'exit 0' }], { workspaceRoot: ws })
+  const { checks } = await checksModule.runChecks([{ id: 'k1', type: 'exec', cmd: 'exit 0' }], { workspaceRoot: ws })
   const d = decide(c, makeEvidence({ contractId: c.id, checks }))
   assert.equal(d.decision, 'RED')
   assert.ok(!/复现：exit 0/.test('复现：' + d.reproCmd), '不能把被拒命令当复现：' + d.reproCmd)
   assert.match(d.reproCmd, /exit 1/, '应是可执行且退出非 0 的提示命令')
 })
 
-test('P0-A: file.exists 越出 workspaceRoot → RED', () => {
-  const { checks } = checksModule.runChecks(
+test('P0-A: file.exists 越出 workspaceRoot → RED', async () => {
+  const { checks } = await checksModule.runChecks(
     [{ id: 'k1', type: 'file.exists', path: '../outside.txt' }],
     { workspaceRoot: process.cwd() })
   const c = freezeContract({ objective: 'x', workspaceRoot: process.cwd().replace(/\\/g, '/'),
@@ -188,12 +188,13 @@ test('P0-A: file.exists 越出 workspaceRoot → RED', () => {
   assert.match(d.reasons.join(''), /越出 workspaceRoot/)
 })
 
-test('P1-B: 未知 policyId → RED 且不泄露内部路径', () => {
+test('P1-B: 未知 policyId → RED 且不泄露内部路径', async () => {
   const s = newStores()
   const { contractId } = verifyContract({ objective: 'x', policyId: 'nope',
     workspaceRoot: process.cwd().replace(/\\/g, '/'),
-    criteria: [{ id: 'c1', text: 't', checkIds: ['tests'] }] }, 'default', s.contracts)
-  const r = verifyRun({ contractId, usePolicy: true }, s.contracts, s.runs)
+    criteria: [{ id: 'c1', text: 't', checkIds: ['tests'] }] }, 'default', s.contracts, s.runs)
+  gateFreeze({ contractId, sessionId: 'default' }, s.contracts, s.runs)
+  const r = await verifyRun({ contractId, usePolicy: true }, s.contracts, s.runs)
   assert.equal(r.decision, 'RED')
   const text = r.reasons.join(' ')
   assert.match(text, /未知策略/)

@@ -5,7 +5,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { apply } from '../index.js'
-import { verifyContract, verifyRun, newStores } from '../lib/core/verify.js'
+import { verifyContract as __verifyContract, verifyRun, newStores, gateFreeze } from '../lib/core/verify.js'
+
+function verifyContract(input, sessionId = 'default', store, runStore) {
+  const r = __verifyContract(input, sessionId, store, runStore)
+  gateFreeze({ contractId: r.contractId, sessionId }, store, runStore)
+  return r
+}
 
 const cfg = {
   externalAgents: { a: { baseUrl: 'http://x', apiKeyEnv: 'K', models: ['m'] } },
@@ -27,7 +33,7 @@ function fakeCtx(services = {}) {
   return { ctx: base, registered }
 }
 
-test('必改1: 注册了 dsh-swarm-console-verify skill，invocation 可模型调用', () => {
+test('必改1: 注册了 dsh-swarm-console-verify skill，invocation 可模型调用', async () => {
   const skills = { register: (s) => { captured = s; return () => {} } }
   let captured = null
   const { ctx } = fakeCtx({ skills })
@@ -38,7 +44,7 @@ test('必改1: 注册了 dsh-swarm-console-verify skill，invocation 可模型�
   assert.equal(captured.invocation.userInvocable, true)
 })
 
-test('时机: 服务缺席时 apply 不抛，服务出现后 register 被调用（ctx.inject）', () => {
+test('时机: 服务缺席时 apply 不抛，服务出现后 register 被调用（ctx.inject）', async () => {
   const pending = []
   let skillsReg = 0, cardsReg = 0
   const ctx = {
@@ -58,7 +64,7 @@ test('时机: 服务缺席时 apply 不抛，服务出现后 register 被调用�
   assert.equal(cardsReg, 1, 'actionCards 出现后应注册')
 })
 
-test('必改1补: source 为非空字符串且为 runtime（缺它 skill 加载失败）', () => {
+test('必改1补: source 为非空字符串且为 runtime（缺它 skill 加载失败）', async () => {
   let captured = null
   const skills = { register: (s) => { captured = s; return () => {} } }
   apply(fakeCtx({ skills }).ctx, cfg)
@@ -67,7 +73,7 @@ test('必改1补: source 为非空字符串且为 runtime（缺它 skill 加载�
   assert.equal(captured.source, 'runtime')
 })
 
-test('必改1: skill content 写明 approve 仅 GREEN、retry、非用户代批拒绝', () => {
+test('必改1: skill content 写明 approve 仅 GREEN、retry、非用户代批拒绝', async () => {
   let captured = null
   const skills = { register: (s) => { captured = s; return () => {} } }
   apply(fakeCtx({ skills }).ctx, cfg)
@@ -77,7 +83,7 @@ test('必改1: skill content 写明 approve 仅 GREEN、retry、非用户代批�
   assert.match(captured.content, /只有用户/)
 })
 
-test('必改1: skill 与卡片 kind 指向同名（propose_action 可达）', () => {
+test('必改1: skill 与卡片 kind 指向同名（propose_action 可达）', async () => {
   let skillName = null
   let cardAction = null
   const skills = { register: (s) => { skillName = s.name; return () => {} } }
@@ -88,7 +94,7 @@ test('必改1: skill 与卡片 kind 指向同名（propose_action 可达）', ()
   assert.equal(cardAction, skillName)
 })
 
-test('必改1: skills 服务缺失时 verify_* 三工具仍注册（不阻塞）', () => {
+test('必改1: skills 服务缺失时 verify_* 三工具仍注册（不阻塞）', async () => {
   const { ctx, registered } = fakeCtx() // 无 skills、无 cards
   assert.doesNotThrow(() => apply(ctx, cfg))
   for (const n of ['swarm_run', 'verify_contract', 'verify_run', 'verify_status']) {
@@ -96,50 +102,50 @@ test('必改1: skills 服务缺失时 verify_* 三工具仍注册（不阻塞）
   }
 })
 
-test('必改1: skills.register 抛错时不阻塞三工具', () => {
+test('必改1: skills.register 抛错时不阻塞三工具', async () => {
   const skills = { register: () => { throw new Error('boom') } }
   const { ctx, registered } = fakeCtx({ skills })
   assert.doesNotThrow(() => apply(ctx, cfg))
   assert.ok(registered.tools.has('verify_contract'))
 })
 
-test('必改2: verify_run RED 输出含可复制复现命令', () => {
+test('必改2: verify_run RED 输出含可复制复现命令', async () => {
   const def = collectVerifyRun()
   const { contracts, runs } = newStores()
-  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts)
+  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts, runs)
   const failPolicy = (c) => ({ contractId: c.id, checks: [{ id: 'k1', type: 'exec', ok: false, cmd: 'npm test' }], artifacts: [], level: 'E2', status: 'failed', at: '' })
-  const r = verifyRun({ contractId, runPolicy: failPolicy }, contracts, runs)
+  const r = await verifyRun({ contractId, runPolicy: failPolicy }, contracts, runs)
   const text = def.output.render({}, r)[0].text
   assert.match(text, /^门禁 RED/)
   assert.match(text, /复现：npm test/)
 })
 
-test('必改2: RED 输出必带可执行的复现命令（file.exists → node -e；无路径 → 兜底命令）', () => {
+test('必改2: RED 输出必带可执行的复现命令（file.exists → node -e；无路径 → 兜底命令）', async () => {
   const def = collectVerifyRun()
   const { contracts, runs } = newStores()
 
   // 有 path：应给出 test -f <path>，而不是装饰性注释
-  const a = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts)
+  const a = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts, runs)
   const withPath = (c) => ({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false, path: 'no/such/file' }], artifacts: [], level: 'E1', status: 'failed', at: '' })
-  const ra = verifyRun({ contractId: a.contractId, runPolicy: withPath }, contracts, runs)
+  const ra = await verifyRun({ contractId: a.contractId, runPolicy: withPath }, contracts, runs)
   const ta = def.output.render({}, ra)[0].text
   assert.match(ta, /复现：node -e /, 'file.exists 应给 node -e 形式（跨平台）')
   assert.ok(!/未提供 cmd/.test(ta), '不应再出现「未提供 cmd」')
 
   // 没有 path：无法构造针对性命令，但必须是可执行且退出非 0 的真命令
-  const b = verifyContract({ objective: 'y', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts)
+  const b = verifyContract({ objective: 'y', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts, runs)
   const noPath = (c) => ({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false }], artifacts: [], level: 'E1', status: 'failed', at: '' })
-  const rb = verifyRun({ contractId: b.contractId, runPolicy: noPath }, contracts, runs)
+  const rb = await verifyRun({ contractId: b.contractId, runPolicy: noPath }, contracts, runs)
   const tb = def.output.render({}, rb)[0].text
   assert.match(tb, /复现：echo "check k1 无可执行复现命令/)
   assert.match(tb, /&& exit 1/)
 })
 
-test('必改2: YELLOW 输出附 missing 摘要', () => {
+test('必改2: YELLOW 输出附 missing 摘要', async () => {
   const def = collectVerifyRun()
   const { contracts, runs } = newStores()
-  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: [] }] }, 'default', contracts)
-  const r = verifyRun({ contractId, evidenceInput: { checks: [], artifacts: [] } }, contracts, runs)
+  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: [] }] }, 'default', contracts, runs)
+  const r = await verifyRun({ contractId, evidenceInput: { checks: [], artifacts: [] } }, contracts, runs)
   const text = def.output.render({}, r)[0].text
   assert.match(text, /^门禁 YELLOW/)
   assert.match(text, /缺失证据：/)

@@ -1,6 +1,18 @@
 # 更新日志
 
-## 0.3.3 · 包页文档纠错（只改文档）
+## 0.4.0 · 契约必须由用户确认（破坏性）
+
+**破坏性变更：`verify_run` 现在要求先确认契约。**
+- `verify_contract` 冻结后进入**待确认**状态；未确认时 `verify_run` 直接判 RED（「契约尚未由用户确认，请先 /gate-freeze <id>」），不生成检查、不写证据
+- 新增斜杠命令 `/gate-freeze <id|前缀>`：只能由用户触发（模型无对应工具），记录 `confirmed/confirmedAt/confirmedBy:'user'`，按会话隔离
+- 确认是**状态**不是内容：契约哈希不变；同一契约重复冻结不会重置已确认
+- `/gate-status` 显示「待确认」或「已确认 @ 时间」
+
+**异步执行：**
+- `runChecks` / `verifyRun` / `gate-retry` 改为 async；默认 exec 用 `child_process.spawn`，10 秒超时强制终止，等待期间不再阻塞宿主事件循环
+- 工具 `execute` 与命令 handler 全部 `await`，宿主不会收到浮动 Promise
+
+## ## 0.3.3 · 包页文档纠错（只改文档）
 
 - 安装节不再让用户在终端敲 `plugin_manager`（那是模型侧工具）；改为 UI 路径 + 说明可让 agent 代装
 - 补两个实操坑：跨次版本必须显式写版本号；国内镜像 `npmmirror` 有同步延迟，急用可从官方源装
