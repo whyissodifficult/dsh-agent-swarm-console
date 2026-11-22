@@ -21,22 +21,20 @@ Agent 说「完成了」，可能只是日志刷屏、产出为零。这个插�
 
 ### 从 npm 安装（已验证）
 
-DSH 的 **插件 → 添加插件** 里输入包名，安装源选 `npm 官方源`：
+在 DSH 的 **插件 → 添加插件** 里输入包名，安装源选 `npm 官方源`：
 
 ```text
 dsh-swarm-console
 ```
 
-或命令行：
+也可以直接在会话里让 agent 装（它调用 `plugin_manager`，这不是你能在终端敲的命令）。
 
-```text
-plugin_manager install_bundle dsh-swarm-console
-```
+> **两个实操坑**
+> 1. `^0.2.x` 的 semver 上限不含 0.3.0：跨次版本升级必须显式写版本（如 `dsh-swarm-console@0.3.3`）。
+> 2. 若你的 DSH 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（几分钟到半小时）；
+>    急用可从官方源下载 tarball 后用本地文件安装。
 
-> 升级到新的次版本（0.2.x → 0.3.x）必须显式指定版本：`install_bundle dsh-swarm-console@0.3.2`，
-> 因为 `^0.2.x` 的 semver 上限不含 0.3.0。
-
-> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.2.2`，安装后 `verify_*` 工具与三条斜杠命令均可用。
+> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.3.x`，安装后 `verify_*` 工具与三条斜杠命令均可用。
 
 ### 从本地目录安装（已验证）
 
