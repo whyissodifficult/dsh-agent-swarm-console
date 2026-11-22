@@ -1,5 +1,17 @@
 # 更新日志
 
+## 0.4.5 · 修复 Android/Termux 上 exec 检查恒失败
+
+- **现象**：DSH 手机端（0.2.1-rc.2，Android/Termux，Node 26）上带 `exec` 的契约必然 RED：
+  `spawn /data/data/com.termux/files/usr/bin/sh ENOENT`——`shell: true` 走的是 Node 编译期硬编码路径。
+- **修复**：显式探测可用 shell 后传给 `spawn`（`ComSpec` → `$SHELL` → `/bin/sh` → `/usr/bin/sh` →
+  `/system/bin/sh` → Termux 的 sh/bash，取第一个存在的）；`resolveShell` 可注入，便于测试。
+- **语义修正**：环境确实没有 shell 时不再判 RED，而是 `env-unavailable` 检查 → 门禁 **YELLOW**，
+  reason 写明「环境无可用 shell（已尝试：…）」。环境缺失 ≠ 代码没通过。
+- 同时修：`envUnavailable` 参与 evidence 规范化；H2「失败必须给 cmd」不再误伤环境不可用检查。
+- 测试：+3（无 shell → YELLOW、显式 shell → 正常执行、环境不可用与真实失败并存仍判 RED），共 88 条。
+
+
 ## 0.4.4 · 确认前先看清内容 + 超时可配置
 
 - **P0-E（安全）**：`/gate-freeze` 以前只回显 id，等于蒙着眼睛签字。现在会**先回显契约全文**

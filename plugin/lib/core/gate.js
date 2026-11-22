@@ -23,8 +23,11 @@ export function decide(contract, evidence) {
   const checks = Array.isArray(evidence?.checks) ? evidence.checks : []
   const byId = new Map(checks.map((c) => [c.id, c]))
 
+  // 环境缺失单独一档：不能当「代码没通过」
+  const envBlocked = checks.filter((c) => c.envUnavailable === true)
+
   // R2 先行：任一 check 失败即 RED，并给出最小复现命令
-  const failed = checks.filter((c) => c.ok === false)
+  const failed = checks.filter((c) => c.ok === false && c.envUnavailable !== true)
   if (failed.length > 0) {
     const reproCmd = failed.map((c) => reproFor(c)).filter(Boolean).join(' && ')
     for (const c of failed) {
@@ -32,6 +35,17 @@ export function decide(contract, evidence) {
     }
     if (!reproCmd) reasons.push('未提供可复现命令（reproCmd 为空）')
     return { decision: 'RED', reasons, missing, reproCmd: reproCmd || undefined }
+  }
+
+  // 有检查因环境不可用而被跳过 → 最高 YELLOW（且明确写「环境不支持」而不是「你没交证据」）
+  if (envBlocked.length > 0) {
+    for (const c of envBlocked) reasons.push(`check "${c.id}" 未能执行：${c.detail}`)
+    reasons.push('环境限制导致无法判定，不能算通过（不是测试失败）')
+    for (const criterion of contract.criteria) {
+      const ids = Array.isArray(criterion.checkIds) ? criterion.checkIds : []
+      if (ids.some((id) => envBlocked.some((c) => c.id === id))) missing.push(`${criterion.id}: 环境无可用 shell，未能执行 ${ids.join(', ')}`)
+    }
+    return { decision: 'YELLOW', reasons, missing }
   }
 
   // R1：逐条 criterion 查证据覆盖

@@ -278,3 +278,39 @@ test('P1-B: 未确认时的 RED 会写状态，status 不显示 undefined', asyn
   const txt = gateStatus({ contractId }, s.contracts, s.runs).text
   assert.ok(!txt.includes('undefined'), txt)
 })
+
+test('Android/Termux: 无可用 shell → env-unavailable，门禁 YELLOW（不是 RED）', async () => {
+  const root = process.cwd().replace(/\\\\/g, '/')
+  const { checks } = await checksModule.runChecks(
+    [{ id: 'k1', type: 'exec', cmd: 'npm test' }],
+    { workspaceRoot: root, testCmd: 'npm test', resolveShell: () => null })
+  assert.equal(checks[0].envUnavailable, true, JSON.stringify(checks[0]))
+  assert.match(checks[0].detail, /无可用 shell/, checks[0].detail)
+  const c = freezeContract({ objective: 'x', workspaceRoot: root, testCmd: 'npm test',
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] })
+  const d = decide(c, makeEvidence({ contractId: c.id, checks }))
+  assert.equal(d.decision, 'YELLOW', d.decision)
+  assert.match(d.reasons.join(' '), /环境限制|未能执行/, d.reasons.join(' '))
+})
+
+test('Android/Termux: 显式 shell 可用 → exec 正常执行并取 exitCode', async () => {
+  const root = process.cwd().replace(/\\\\/g, '/')
+  const shell = process.env.ComSpec || '/bin/sh'
+  const { checks } = await checksModule.runChecks(
+    [{ id: 'k1', type: 'exec', cmd: 'node -e "process.exit(0)"' }],
+    { workspaceRoot: root, testCmd: 'node -e "process.exit(0)"', resolveShell: () => shell })
+  assert.equal(checks[0].ok, true, JSON.stringify(checks[0]))
+  assert.equal(checks[0].exitCode, 0)
+  assert.equal(checks[0].envUnavailable, undefined)
+})
+
+test('环境不可用 + 真实失败并存 → 仍判 RED（真实失败优先）', async () => {
+  const root = process.cwd().replace(/\\\\/g, '/')
+  const c = freezeContract({ objective: 'x', workspaceRoot: root,
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1', 'k2'] }] })
+  const d = decide(c, makeEvidence({ contractId: c.id, checks: [
+    { id: 'k1', type: 'exec', ok: false, envUnavailable: true, detail: '当前环境无可用 shell' },
+    { id: 'k2', type: 'file.exists', ok: false, path: 'nope.txt', absPath: root + '/nope.txt' },
+  ] }))
+  assert.equal(d.decision, 'RED', d.decision)
+})

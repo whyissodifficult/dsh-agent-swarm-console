@@ -15,6 +15,25 @@ import { isAbsolute, relative, resolve } from 'node:path'
 
 const EXEC_TIMEOUT_MS = 10000
 
+/** 候选 shell，按顺序探测（Android/Termux 上 `shell: true` 会走编译期硬编码路径，必须显式传） */
+const SHELL_CANDIDATES = [
+  process.env.ComSpec,
+  process.env.SHELL,
+  '/bin/sh',
+  '/usr/bin/sh',
+  '/system/bin/sh',
+  '/data/data/com.termux/files/usr/bin/sh',
+  '/data/data/com.termux/files/usr/bin/bash',
+].filter((v) => typeof v === 'string' && v !== '')
+
+/** 返回第一个存在的 shell；找不到返回 null（由调用方记 env-unavailable，不判 RED） */
+export function resolveDefaultShell(exists = fsExistsSync) {
+  for (const p of SHELL_CANDIDATES) {
+    try { if (exists(p)) return p } catch { /* ignore */ }
+  }
+  return null
+}
+
 /**
  * @param {Array} requests 检查请求
  * @param {{workspaceRoot:string, testCmd?:string, existsSync?:Function, exec?:Function}} deps
@@ -25,6 +44,10 @@ export async function runChecks(requests, deps = {}) {
   const existsSync = deps.existsSync ?? fsExistsSync
   const realpathSync = deps.realpathSync ?? fsRealpathSync
   const execTimeoutMs = Number.isFinite(deps.timeoutMs) ? deps.timeoutMs : EXEC_TIMEOUT_MS
+  // 手机端（Termux）`shell: true` 会走硬编码 sh 路径；显式探测并传入
+  const usingDefaultExec = typeof deps.exec !== 'function'
+  const resolveShell = deps.resolveShell ?? (() => resolveDefaultShell())
+  const shell = usingDefaultExec ? resolveShell() : (deps.shell ?? null)
   const exec = deps.exec ?? runExecAsync
 
   const warnings = []
@@ -85,7 +108,15 @@ export async function runChecks(requests, deps = {}) {
       if (typeof deps.testCmd !== 'string' || deps.testCmd === '' || req.cmd !== deps.testCmd) {
         checks.push({ id, type, ok: false, cmd: req.cmd, rejected: true, detail: 'exec 命令未在契约中声明为 testCmd，已拒绝' }); continue
       }
-      const r = await exec(req.cmd, { cwd: workspaceRoot, timeoutMs: execTimeoutMs })
+      if (usingDefaultExec && !shell) {
+        // 环境缺失 ≠ 代码没通过：记 env-unavailable，交给 gate 判 YELLOW
+        checks.push({
+          id, type, ok: false, envUnavailable: true, cmd: req.cmd,
+          detail: `当前环境无可用 shell（已尝试：${(deps.shellCandidates ?? SHELL_CANDIDATES).join(', ')}）`,
+        })
+        continue
+      }
+      const r = await exec(req.cmd, { cwd: workspaceRoot, timeoutMs: execTimeoutMs, shell })
       const ok = r.error === undefined && r.status === 0
       const out = { id, type, ok, cmd: req.cmd, exitCode: r.status }
       if (!ok) {
@@ -109,7 +140,8 @@ function runExecAsync(cmd, opts = {}) {
   return new Promise((resolvePromise) => {
     let child
     try {
-      child = spawn(cmd, { shell: true, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+      // 不能用 shell: true（Android/Termux 会走硬编码路径）；显式传探测到的 shell
+      child = spawn(cmd, { shell: opts.shell ?? true, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     } catch (error) {
       resolvePromise({ status: null, error, stdout: '', stderr: '' })
       return

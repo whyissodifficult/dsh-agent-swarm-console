@@ -87,13 +87,14 @@ function normalizeChecks(value) {
     if (typeof c.type !== 'string' || c.type === '') throw new Error(`checks[${i}].type 必填`)
     if (typeof c.ok !== 'boolean') throw new Error(`checks[${i}].ok 必须是布尔`)
     // exec 类 check 必须有可执行 cmd —— 缺 cmd 的失败无法复现，H2 要求策略层就拒绝。
-    if (c.type === 'exec' && c.ok === false && (typeof c.cmd !== 'string' || c.cmd.trim() === '')) {
+    // env-unavailable 不是「测试失败」，不受 H2「失败必须给 cmd」约束
+    if (c.type === 'exec' && c.ok === false && c.envUnavailable !== true && (typeof c.cmd !== 'string' || c.cmd.trim() === '')) {
       throw new Error(`checks[${i}] exec 类失败 check 必须提供可执行 cmd（H2 reproCmd）`)
     }
     const out = { id: c.id, type: c.type, ok: c.ok }
     // path 必须保留：file.exists 失败时 gate 要用它生成 `test -f <path>` 复现命令
     // absPath 必须保留：file.exists 的复现命令要用绝对路径，否则换个 cwd 就指向别的文件
-    for (const k of ['detail', 'exitCode', 'cmd', 'path', 'absPath', 'rejected']) if (c[k] !== undefined) out[k] = c[k]
+    for (const k of ['detail', 'exitCode', 'cmd', 'path', 'absPath', 'rejected', 'envUnavailable']) if (c[k] !== undefined) out[k] = c[k]
     return out
   })
 }
