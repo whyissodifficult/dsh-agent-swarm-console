@@ -1,5 +1,14 @@
 # 更新日志
 
+## 0.4.1 · 修 /gate-freeze 之后 verify_status 报错
+
+- **现象**：刚 `/gate-freeze`、还没跑过 `verify_run` 时，`verify_status` 工具报
+  `invalid output: value is not lossless JSON`——因为记录里 `decision`/`at`/`evidenceHash`
+  还是 `undefined`，随工具输出序列化失败
+- **修复**：`verifyStatus` 省略未定义字段；工具渲染兜住「已确认但还没跑过」→「尚未跑过 verify_run」
+- 回归测试：freeze 后 `verifyStatus` 结果可 `JSON.stringify` 且不含 undefined
+
+
 ## 0.4.0 · 契约必须由用户确认（破坏性）
 
 **破坏性变更：`verify_run` 现在要求先确认契约。**

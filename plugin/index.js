@@ -325,7 +325,10 @@ function registerVerifyTools(ctx) {
         render: (args, v) => {
           if (!v.known) return [{ type: 'text', text: '未知 contractId，尚无门禁记录' }]
           const confirmText = v.confirmed ? `已确认${v.confirmedAt ? ' @ ' + v.confirmedAt : ''}` : '待确认（/gate-freeze）'
-          const lines = [`${confirmText}；最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}${v.approved ? `；已由用户放行 @ ${v.approvedAt}` : '；尚未放行'}`]
+          const head = v.decision
+            ? `${confirmText}；最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}${v.approved ? `；已由用户放行 @ ${v.approvedAt}` : '；尚未放行'}`
+            : `${confirmText}；尚未跑过 verify_run`
+          const lines = [head]
           if (v.evidenceHash) lines.push(`证据：${v.evidenceHash}`)
           if (v.stale) lines.push(`[stale] 上次放行已失效${v.lastApprovedAt ? `（${v.lastApprovedAt}）` : ''}`)
           if (v.reproCmd) lines.push(`复现：${v.reproCmd}`)

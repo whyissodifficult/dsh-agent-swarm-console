@@ -9,7 +9,7 @@ import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
 import * as checksModule from '../lib/core/checks.js'
-import { verifyContract, verifyRun, newStores, gateFreeze } from '../lib/core/verify.js'
+import { verifyContract, verifyRun, verifyStatus, newStores, gateFreeze } from '../lib/core/verify.js'
 import { z } from '../lib/core/mini-schema.js'
 
 const ROOT = process.cwd()
@@ -199,4 +199,17 @@ test('P1-B: 未知 policyId → RED 且不泄露内部路径', async () => {
   const text = r.reasons.join(' ')
   assert.match(text, /未知策略/)
   assert.ok(!/[A-Za-z]:\\/.test(text), '不得包含绝对路径：' + text)
+})
+
+test('P0: 刚 freeze、还没 verify_run 时 verifyStatus 可 JSON 序列化（无 undefined）', () => {
+  const s = newStores()
+  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd().replace(/\\/g, '/'),
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] }, 'default', s.contracts, s.runs)
+  gateFreeze({ contractId }, s.contracts, s.runs)
+  const st = verifyStatus({ contractId }, s.runs)
+  assert.equal(st.confirmed, true, JSON.stringify(st))
+  // 关键：不能有「值为 undefined 的自有属性」——宿主序列化会因此报 not lossless JSON
+  const bad = Object.entries(st).filter(([, v]) => v === undefined).map(([k]) => k)
+  assert.deepEqual(bad, [], '这些字段值为 undefined：' + bad.join(', '))
+  assert.equal('decision' in st, false, '尚未跑过时不应带 decision 字段')
 })

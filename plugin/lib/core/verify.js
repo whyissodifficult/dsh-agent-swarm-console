@@ -171,9 +171,11 @@ export function verifyStatus({ contractId, sessionId = 'default' }, runStore = r
     known: true,
     confirmed: r.confirmed === true,
     ...(r.confirmedAt ? { confirmedAt: r.confirmedAt } : {}),
-    decision: r.decision,
-    at: r.at,
-    evidenceHash: r.evidenceHash,
+    // 刚 freeze、还没跑过 verify_run 时这三个字段是 undefined；
+    // 直接返回会让工具输出变成非法 JSON（not lossless JSON），必须省略
+    ...(r.decision ? { decision: r.decision } : {}),
+    ...(r.at ? { at: r.at } : {}),
+    ...(r.evidenceHash ? { evidenceHash: r.evidenceHash } : {}),
     ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}),
     ...(Array.isArray(r.missing) && r.missing.length > 0 ? { missing: r.missing } : {}),
     ...(r.approved === true ? { approved: true, approvedAt: r.approvedAt } : {}),
