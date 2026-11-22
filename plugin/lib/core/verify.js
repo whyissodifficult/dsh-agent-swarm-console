@@ -69,7 +69,12 @@ export function verifyRun({ contractId, sessionId = 'default', evidenceInput, ru
   // P0-1：只有契约显式声明 policyId，且策略的每个检查 id 都被契约 checkIds 覆盖，才启用策略
   let policyNote
   if (usePolicy === true && !evidenceInput && typeof runPolicy !== 'function' && typeof contract.policyId === 'string') {
-    const policy = loadPolicy(contract.policyId)
+    let policy
+    try {
+      policy = loadPolicy(contract.policyId)
+    } catch {
+      return { decision: 'RED', reasons: [`未知策略 ${contract.policyId}（可用策略见 plugin/policies）`], evidenceHash: '' }
+    }
     const declared = policyCheckIds(policy)
     const covered = new Set(contract.criteria.flatMap((c) => c.checkIds))
     const uncovered = declared.filter((id) => !covered.has(id))

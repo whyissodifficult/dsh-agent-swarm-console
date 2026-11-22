@@ -60,18 +60,18 @@ verify_run        跑证据校验：checks 是「检查请求」，由插件实�
 示例：
 
 ```text
-> verify_contract {"objective":"给 README 加安装节","workspaceRoot":"D:/my-project",
+> verify_contract {"objective":"给 README 加安装节","workspaceRoot":"/path/to/your/project",
                    "criteria":[{"id":"c1","text":"安装节存在","checkIds":["k1"]}]}
-contract 7e280e5c4f7e 已冻结
+contract 7e280e5c4f7e 已冻结    ← id 由内容决定，你这边的值会不同
 
 > verify_run {"contractId":"7e280e5c4f7e","checks":[{"id":"k1","type":"file.exists","path":"README.md"}]}
 门禁 GREEN：全部 1 条验收条件均有通过证据
 
 > /gate-status 7e28
 契约 7e280e5c4f7e：最近决定 GREEN @ …；尚未放行
-证据：380cdbc5b3ed
+证据：<evidenceHash>（每次 verify_run 都会变）
 
-> /gate-approve 7e28 380cdbc5b3ed
+> /gate-approve 7e28 <evidenceHash>
 契约 7e280e5c4f7e 已由用户放行（approved）
 ```
 

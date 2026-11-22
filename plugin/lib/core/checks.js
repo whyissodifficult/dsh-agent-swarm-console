@@ -11,7 +11,7 @@
  */
 import { existsSync as fsExistsSync } from 'node:fs'
 import { spawnSync as cpSpawnSync } from 'node:child_process'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 
 /**
  * @param {Array} requests 检查请求
@@ -24,7 +24,7 @@ export function runChecks(requests, deps = {}) {
   const exec = deps.exec ?? ((cmd, opts) => cpSpawnSync(cmd, {
     shell: true,
     cwd: opts?.cwd,
-    timeout: 120000,
+    timeout: 10000,
     encoding: 'utf8',
     maxBuffer: 8 * 1024 * 1024,
   }))
@@ -62,6 +62,11 @@ export function runChecks(requests, deps = {}) {
         return invalid('缺少 workspaceRoot，无法解析相对路径')
       }
       const absPath = resolve(workspaceRoot, req.path)
+      // P0-A：必须留在 workspaceRoot 内，`../` 不得越界
+      const rel = relative(workspaceRoot, absPath)
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        return { id, type, ok: false, path: req.path, absPath, detail: `检查路径越出 workspaceRoot：${req.path}` }
+      }
       const ok = existsSync(absPath) === true
       return { id, type, ok, path: req.path, absPath, detail: ok ? `文件存在：${req.path}` : `文件不存在：${req.path}` }
     }

@@ -271,7 +271,7 @@ function registerVerifyTools(ctx) {
           const lines = [`门禁 ${v.decision}：${v.reasons.join('；')}`]
           // 必改2：RED 必带可复制复现命令；YELLOW 附缺失证据摘要
           if (v.decision === 'RED') {
-            lines.push(v.reproCmd ? `复现：${v.reproCmd}` : '复现：未提供命令（异常）')
+            if (v.reproCmd) lines.push(`复现：${v.reproCmd}`)
           }
           if (v.decision === 'YELLOW' && Array.isArray(v.missing) && v.missing.length > 0) {
             lines.push(`缺失证据：${v.missing.join('；')}`)

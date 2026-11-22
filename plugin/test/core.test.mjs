@@ -9,6 +9,7 @@ import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
 import * as checksModule from '../lib/core/checks.js'
+import { verifyContract, verifyRun, newStores } from '../lib/core/verify.js'
 import { z } from '../lib/core/mini-schema.js'
 
 const ROOT = process.cwd()
@@ -174,4 +175,27 @@ test('H2: exec 被白名单拒绝时，复现命令不是那条被拒的命令',
   assert.equal(d.decision, 'RED')
   assert.ok(!/复现：exit 0/.test('复现：' + d.reproCmd), '不能把被拒命令当复现：' + d.reproCmd)
   assert.match(d.reproCmd, /exit 1/, '应是可执行且退出非 0 的提示命令')
+})
+
+test('P0-A: file.exists 越出 workspaceRoot → RED', () => {
+  const { checks } = checksModule.runChecks(
+    [{ id: 'k1', type: 'file.exists', path: '../outside.txt' }],
+    { workspaceRoot: process.cwd() })
+  const c = freezeContract({ objective: 'x', workspaceRoot: process.cwd().replace(/\\/g, '/'),
+    criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
+  const d = decide(c, makeEvidence({ contractId: c.id, checks }))
+  assert.equal(d.decision, 'RED')
+  assert.match(d.reasons.join(''), /越出 workspaceRoot/)
+})
+
+test('P1-B: 未知 policyId → RED 且不泄露内部路径', () => {
+  const s = newStores()
+  const { contractId } = verifyContract({ objective: 'x', policyId: 'nope',
+    workspaceRoot: process.cwd().replace(/\\/g, '/'),
+    criteria: [{ id: 'c1', text: 't', checkIds: ['tests'] }] }, 'default', s.contracts)
+  const r = verifyRun({ contractId, usePolicy: true }, s.contracts, s.runs)
+  assert.equal(r.decision, 'RED')
+  const text = r.reasons.join(' ')
+  assert.match(text, /未知策略/)
+  assert.ok(!/[A-Za-z]:\\/.test(text), '不得包含绝对路径：' + text)
 })

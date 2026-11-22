@@ -1,5 +1,15 @@
 # 更新日志
 
+## 0.3.2 · 工作区边界与策略错误处理
+
+- **P0-A（安全）**：`file.exists` 的路径必须留在 `workspaceRoot` 内；`../` 越界直接判 RED
+  （此前 `../dsh-secret.txt` 可以对工作区外任意文件断言成功）
+- **P1-B**：未知 `policyId` 不再抛异常并泄露内部绝对路径，改为 RED「未知策略 <id>」
+- **P1-A（缓解）**：`exec` 超时 120s → 10s，减少阻塞窗口；异步执行仍排 0.4.0
+- **P3**：查不到契约时不再渲染「复现：未提供命令（异常）」
+- **P2**：README 示例改用占位符（`<evidenceHash>`、`/path/to/your/project`），避免照抄得到「证据已过期」
+
+
 ## 0.3.1 · 文档与复现命令对齐 0.3.0 语义
 
 - README 示例按 0.3.0 重写：`verify_contract` 带 `workspaceRoot`、`verify_run` 用相对路径检查、
