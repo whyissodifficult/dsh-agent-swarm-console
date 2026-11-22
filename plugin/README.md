@@ -72,10 +72,16 @@ contract 5bc483324d46 已冻结
 已实现：
 
 - 契约冻结与内容哈希（`contract.id`）
-- 证据分级与三态门禁（`GREEN` / `YELLOW` / `RED`）
+- 证据由插件执行：`verify_run` 的 `checks` 是**检查请求**而非结论——`file.exists` 由插件 `existsSync` 判定，`exec` 由插件实际执行；模型自报的 `ok` 一律忽略
+- 证据分级与三态门禁（`GREEN` / `YELLOW` / `RED`）；空契约直接 `RED`
 - `RED` 必带可执行复现命令；缺证据不判通过
-- 用户专属放行：`/gate-approve` `/gate-retry` `/gate-status`
+- 用户专属放行：`/gate-approve` `/gate-retry` `/gate-status`；重跑后旧放行标记 `stale`
 - 外部 agent 适配层（OpenAI 兼容端点，作为原生 subagent run 使用）
+
+⚠️ 两条必须知道的行为：
+
+- **`exec` 检查以当前用户权限执行命令**，等同于你自己在终端敲那条命令。请只把可信命令写进契约，不要接受来源不明的检查请求。
+- **执行期间阻塞宿主**：v0.2 采用同步执行，单条检查最长 120 秒，期间宿主事件循环被占用，界面可能短暂无响应。异步执行排进 0.3。
 
 尚未实现（不承诺）：
 
