@@ -1,1 +1,1 @@
-{ "meta": { "title": "Swarm Console 集群控制台", "description": "在 DSH 里跑一个外部 agent；画布与交付门禁开发中。", "detail": "docs/DETAIL.md" } }
+{ "meta": { "title": "Swarm Console 集群控制台", "description": "在 DSH 里跑一个外部 agent，并用可机器验证的门禁确认交付；画布开发中。", "detail": "docs/DETAIL.md" } }

@@ -3,7 +3,7 @@
 > 让 agent 说「完成」之前，先过一道可机器验证的交付门禁。
 
 [![npm](https://img.shields.io/npm/v/dsh-swarm-console.svg)](https://www.npmjs.com/package/dsh-swarm-console)
-[![license](https://img.shields.io/npm/l/dsh-swarm-console.svg)](./LICENSE)
+[![license](https://img.shields.io/npm/l/dsh-swarm-console.svg)](https://github.com/whyissodifficult/dsh-agent-swarm-console/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/dsh-swarm-console.svg)](https://nodejs.org/)
 
 DeepSeek Harness（DSH）插件：把「任务契约 → 证据校验 → 三态门禁 → 用户放行」做成一条可核查的链路。
@@ -75,14 +75,14 @@ contract 5bc483324d46 已冻结
 npm run gate        # probe / selftest / plugin:test / smoke / pack / wiring / dryrun 七段
 ```
 
-验收记录见 [`docs/V1-ACCEPTANCE.md`](./docs/V1-ACCEPTANCE.md)：包含斜杠命令链路的日志证据（`command/run`、`command/done`）与三条硬规则的反证。
+验收记录见 [`docs/V1-ACCEPTANCE.md`](https://github.com/whyissodifficult/dsh-agent-swarm-console/blob/main/plugin/docs/V1-ACCEPTANCE.md)：包含斜杠命令链路的日志证据（`command/run`、`command/done`）与三条硬规则的反证。
 
 ## 链接
 
 - 仓库：https://github.com/whyissodifficult/dsh-agent-swarm-console
-- 插件详情：见 [`docs/DETAIL.md`](./docs/DETAIL.md)
-- 验收记录：[`docs/V1-ACCEPTANCE.md`](./docs/V1-ACCEPTANCE.md)
+- 插件详情：见 [`docs/DETAIL.md`](https://github.com/whyissodifficult/dsh-agent-swarm-console/blob/main/plugin/docs/DETAIL.md)
+- 验收记录：[`docs/V1-ACCEPTANCE.md`](https://github.com/whyissodifficult/dsh-agent-swarm-console/blob/main/plugin/docs/V1-ACCEPTANCE.md)
 
 ## 许可
 
-[MIT](./LICENSE)
+[MIT](https://github.com/whyissodifficult/dsh-agent-swarm-console/blob/main/LICENSE)

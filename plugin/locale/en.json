@@ -1,1 +1,1 @@
-{ "meta": { "title": "Swarm Console", "description": "Run one external agent from DSH; canvas and evidence gate in progress.", "detail": "docs/DETAIL.md" } }
+{ "meta": { "title": "Swarm Console", "description": "Run one external agent from DSH, with a machine-checkable delivery gate; canvas in progress.", "detail": "docs/DETAIL.md" } }

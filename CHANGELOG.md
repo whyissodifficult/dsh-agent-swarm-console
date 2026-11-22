@@ -1,3 +1,8 @@
+## 0.1.2 · 插件页文案纠偏
+
+- locale 描述此前写「画布与交付门禁开发中」；门禁已交付，改为「用可机器验证的门禁确认交付；画布开发中」
+- README 内相对链接改为 GitHub 绝对链接（npm 页上相对链接点不开）
+
 ## 0.1.1 · npm 包页补 README 与许可
 
 - 新增 `plugin/README.md`：npm 包页不再显示「This package does not have a README」
