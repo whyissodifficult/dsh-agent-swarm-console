@@ -28,10 +28,16 @@
 | H2 | RED 必须给可执行的最小复现命令 | 失败 check 未提供 `cmd` → `makeEvidence` 抛错；gate 兜底给 `echo "check X 未提供 cmd" && exit 1`，经 `sh -c` 执行退出非 0 |
 | H3 | 放行只能由用户触发 | agent 身份调 `act(approve)` → refused 并留拒绝事件；实机全日志模型侧 gate 工具调用 0 次 |
 
-## 4. 未验证项（如实记录）
+## 4. 发布与安装验证（2026-11-22 补充）
 
-- **Plugins 列表 GUI 截图待补**：非阻塞，图标已提供，待宿主渲染后补图
-- **npm publish 与市场提交未执行**：由用户执行，本仓库不代为操作凭据
+- **npm**：`dsh-swarm-console@0.1.3` 已发布，`latest` 指向 0.1.3；tarball 逐文件核对通过（16 文件，含 README / LICENSE / icon.svg / docs）
+- **npm 直装已验证**：在 DSH 0.2.2-rc.5 的「插件 → 添加插件」输入包名安装成功，profile 依赖解析为 `^0.1.3`，
+  安装后 `verify_contract` / `verify_run` / `verify_status` 与三条斜杠命令均可用
+- **Plugins 列表截图**：已由用户补（图标、名称、版本、启用开关齐全）
+- **市场/意向表**：已提交（用户侧）
+
+仍待补：
+- 真实第三方用户的使用记录（加分项，非阻塞）
 
 ## 5. 复现命令
 

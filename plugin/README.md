@@ -19,15 +19,30 @@ Agent 说「完成了」，可能只是日志刷屏、产出为零。这个插�
 
 ## 安装
 
-DSH 中安装（本地目录，已验证）：
+### 从 npm 安装（已验证）
+
+DSH 的 **插件 → 添加插件** 里输入包名，安装源选 `npm 官方源`：
+
+```text
+dsh-swarm-console
+```
+
+或命令行：
+
+```text
+plugin_manager install_bundle dsh-swarm-console
+```
+
+> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.1.3`，安装后 `verify_*` 工具与三条斜杠命令均可用。
+
+### 从本地目录安装（已验证）
 
 ```text
 plugin_manager install_bundle <本包目录的绝对路径>
 ```
 
-或在 DSH 的 **Plugins → Add plugin** 里选择本地目录。
+> 注意：以 `link` 方式安装时，卸载该插件会清空被链接目录的内容——请只链接已提交（或已备份）的目录。
 
-> 通过 npm 包名直接安装的路径**尚未验证**，暂不承诺可用。
 
 ## 快速开始
 
