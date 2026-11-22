@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process'
 import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
+import * as checksModule from '../lib/core/checks.js'
 import { z } from '../lib/core/mini-schema.js'
 
 const ROOT = process.cwd()
@@ -146,3 +147,21 @@ test('P2-4: parseResult 只取 RESULT 后第一行', async () => {
   const { parseResult } = await import('../lib/adapter.js')
   assert.equal(parseResult('RESULT: ok\n补充说明\n更多'), 'ok')
 })
+
+test('H2: file.exists 复现命令用绝对路径（换 cwd 也指向同一文件）', () => {
+  const ws = process.cwd().replace(/\\/g, '/')
+  const c = freezeContract({ objective: 'x', workspaceRoot: ws, criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
+  const { runChecks } = require_checks()
+  const { checks } = runChecks([{ id: 'k1', type: 'file.exists', path: 'no/such/file.txt' }], { workspaceRoot: ws })
+  const e = makeEvidence({ contractId: c.id, checks })
+  const d = decide(c, e)
+  assert.equal(d.decision, 'RED')
+  const norm = (v) => String(v).split('\\').join('/')
+  assert.ok(norm(d.reproCmd).includes(norm(ws)), '复现命令必须含绝对路径 ' + ws)
+  const r = spawnSync(d.reproCmd, { shell: true, encoding: 'utf8' })
+  if (r.error === undefined) assert.notEqual(r.status, 0, '文件不存在时应退出非 0')
+})
+
+function require_checks() {
+  return checksModule
+}

@@ -8,6 +8,7 @@
 - 契约新增 `testCmd`（可选）：`exec` 检查只允许这一条命令，`cmd` 必须与它完全相等；不声明则拒绝一切 `exec`。
 - `/gate-approve` **必须**带第二参数 `evidenceHash`（先用 `/gate-status` 复制）；非 GREEN 或 hash 不一致一律拒绝。
 - 契约与运行状态改为按 `${sessionId}:${contractId}` 存储；`/gate-status` 无参只列本会话，前缀解析限定本会话且最短 4 位。
+- 复现命令使用**绝对路径**：`evidence` 保留 `checks[].absPath`，`file.exists` 的 reproCmd 不再随执行目录漂移
 
 **可信度修复：**
 - 删除策略层的 `'npm test'` 兜底：策略不再猜命令；且只有契约显式声明 `policyId`、策略检查 id 全被契约 `checkIds` 覆盖时才启用（杜绝「模型命名即可自证」）

@@ -92,7 +92,8 @@ function normalizeChecks(value) {
     }
     const out = { id: c.id, type: c.type, ok: c.ok }
     // path 必须保留：file.exists 失败时 gate 要用它生成 `test -f <path>` 复现命令
-    for (const k of ['detail', 'exitCode', 'cmd', 'path']) if (c[k] !== undefined) out[k] = c[k]
+    // absPath 必须保留：file.exists 的复现命令要用绝对路径，否则换个 cwd 就指向别的文件
+    for (const k of ['detail', 'exitCode', 'cmd', 'path', 'absPath']) if (c[k] !== undefined) out[k] = c[k]
     return out
   })
 }
