@@ -1,8 +1,8 @@
 {
   "name": "dsh-swarm-console",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
-  "description": "Run one external agent from DSH, with a visible gate (v0.1 · 门禁可用，画布开发中).",
+  "description": "Run one external agent from DSH, with a visible gate (v0.1 路 闂ㄧ鍙敤锛岀敾甯冨紑鍙戜腑).",
   "keywords": ["deepseek-harness", "dsh-plugin", "agent", "swarm", "verification", "gate"],
   "repository": {
     "type": "git",
@@ -10,7 +10,7 @@
     "directory": "plugin"
   },
   "license": "MIT",
-  "author": "郑志阳 (Walk in the white)",
+  "author": "閮戝織闃?(Walk in the white)",
   "homepage": "https://github.com/whyissodifficult/dsh-agent-swarm-console",
   "bugs": { "url": "https://github.com/whyissodifficult/dsh-agent-swarm-console/issues" },
   "engines": { "node": ">=20.3" },
