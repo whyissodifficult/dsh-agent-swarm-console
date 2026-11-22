@@ -2,7 +2,8 @@
 
 > **让 AI 团队干活看得见、信得过** —— 一个为 DeepSeek Harness 设计的多智能体可视化协作与交付验证插件。
 
-> ✅ 已发布 `dsh-swarm-console@0.1.5` · 可安装 Host 插件 + 机器可验证的交付门禁
+> ✅ 已发布 `dsh-swarm-console@0.2.2` · 可安装 Host 插件 + 机器可验证的交付门禁
+> 源码正在开发 `0.3.0`（契约结构破坏性变更：`workspaceRoot` 必填、`testCmd` 白名单、`/gate-approve` 需证据 hash）
 > 已实测：npm 包名安装与本地目录安装两条路径均可用；画布仍在开发中
 
 [English](README.en.md) · 中文
@@ -41,7 +42,7 @@ Agent Swarm Console 把这两件事补上：**一个实时画布**让你看见�
 plugin_manager install_bundle <plugin 绝对路径>
 ```
 
-**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.1.5`，`verify_*` 与三条斜杠命令均可用。
+**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.2.2`，`verify_*` 与三条斜杠命令均可用。
 
 本地目录安装以 link 方式挂在当前 profile：**改代码需重启 DSH 或等 HMR 才生效**；卸载 link 插件会清空被链接目录，请只链接已提交/已备份的目录。配置 `externalAgents` 见 [plugin/docs/DETAIL.md](plugin/docs/DETAIL.md)。
 
@@ -49,7 +50,7 @@ plugin_manager install_bundle <plugin 绝对路径>
 
 ## 状态
 
-> ✅ **0.1.5 已发布** —— npm 包名安装与本地目录安装两条路径均已实测，交付门禁与三条斜杠命令可用；画布仍开发中。
+> ✅ **0.2.2 已发布** —— npm 包名安装与本地目录安装两条路径均已实测，交付门禁与三条斜杠命令（**按会话隔离**）可用；画布仍开发中。
 
 - [x] 竞品调研与架构设计
 - [x] 设计文档定稿（v1.1）

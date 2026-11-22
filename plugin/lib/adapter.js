@@ -253,7 +253,8 @@ export function parseTodos(output) {
  * @returns {string|undefined}
  */
 export function parseResult(output) {
-  const m = output.match(/RESULT:\s*([\s\S]+)$/)
+  // P2-4：只取 RESULT: 之后的第一行，避免把后续说明整段吞进结果
+  const m = output.match(/RESULT:[ \t]*([^\n]*)/)
   return m ? m[1].trim() : undefined
 }
 

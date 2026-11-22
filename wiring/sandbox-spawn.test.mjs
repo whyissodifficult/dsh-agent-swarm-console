@@ -136,5 +136,14 @@ console.log('\n=== 不设强制开关：行为不变 ===')
   ok('mode = pipe', () => assert.equal(r.mode, 'pipe'))
 }
 
+console.log('\n=== P1-7：ENOENT 诊断给完整命令行 ===')
+{
+  const enoentMock = () => ({ status: null, stdout: '', stderr: '', error: enoent })
+  const r = makeSafeSpawn(enoentMock)('git', ['init', '-q'])
+  const text = spawnErrorText(r, 'git')
+  ok('诊断包含 cmd + args 全文', () => assert.match(text, /git init -q/))
+  ok('不再把参数当可执行文件名', () => assert.ok(!/：init -q。/.test(text)))
+}
+
 console.log(`\n通过 ${pass}/${pass + fail} 项${fail === 0 ? ' ✅' : ' ❌'}\n`)
 if (fail > 0) process.exitCode = 1

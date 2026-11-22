@@ -106,7 +106,7 @@ test('必改1: skills.register 抛错时不阻塞三工具', () => {
 test('必改2: verify_run RED 输出含可复制复现命令', () => {
   const def = collectVerifyRun()
   const { contracts, runs } = newStores()
-  const { contractId } = verifyContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, contracts)
+  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts)
   const failPolicy = (c) => ({ contractId: c.id, checks: [{ id: 'k1', type: 'exec', ok: false, cmd: 'npm test' }], artifacts: [], level: 'E2', status: 'failed', at: '' })
   const r = verifyRun({ contractId, runPolicy: failPolicy }, contracts, runs)
   const text = def.output.render({}, r)[0].text
@@ -114,20 +114,20 @@ test('必改2: verify_run RED 输出含可复制复现命令', () => {
   assert.match(text, /复现：npm test/)
 })
 
-test('必改2: RED 输出必带可执行的复现命令（file.exists → test -f；无路径 → 兜底命令）', () => {
+test('必改2: RED 输出必带可执行的复现命令（file.exists → node -e；无路径 → 兜底命令）', () => {
   const def = collectVerifyRun()
   const { contracts, runs } = newStores()
 
   // 有 path：应给出 test -f <path>，而不是装饰性注释
-  const a = verifyContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, contracts)
+  const a = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts)
   const withPath = (c) => ({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false, path: 'no/such/file' }], artifacts: [], level: 'E1', status: 'failed', at: '' })
   const ra = verifyRun({ contractId: a.contractId, runPolicy: withPath }, contracts, runs)
   const ta = def.output.render({}, ra)[0].text
-  assert.match(ta, /复现：test -f /, 'file.exists 应给 test -f 形式')
+  assert.match(ta, /复现：node -e /, 'file.exists 应给 node -e 形式（跨平台）')
   assert.ok(!/未提供 cmd/.test(ta), '不应再出现「未提供 cmd」')
 
   // 没有 path：无法构造针对性命令，但必须是可执行且退出非 0 的真命令
-  const b = verifyContract({ objective: 'y', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, contracts)
+  const b = verifyContract({ objective: 'y', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] }, 'default', contracts)
   const noPath = (c) => ({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false }], artifacts: [], level: 'E1', status: 'failed', at: '' })
   const rb = verifyRun({ contractId: b.contractId, runPolicy: noPath }, contracts, runs)
   const tb = def.output.render({}, rb)[0].text
@@ -138,7 +138,7 @@ test('必改2: RED 输出必带可执行的复现命令（file.exists → test -
 test('必改2: YELLOW 输出附 missing 摘要', () => {
   const def = collectVerifyRun()
   const { contracts, runs } = newStores()
-  const { contractId } = verifyContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: [] }] }, contracts)
+  const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd(), criteria: [{ id: 'AC1', text: 't', checkIds: [] }] }, 'default', contracts)
   const r = verifyRun({ contractId, evidenceInput: { checks: [], artifacts: [] } }, contracts, runs)
   const text = def.output.render({}, r)[0].text
   assert.match(text, /^门禁 YELLOW/)

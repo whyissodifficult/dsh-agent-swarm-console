@@ -1,6 +1,6 @@
 /**
- * D7-1 · core 三件套单测（node --test）。
- * contract / evidence / gate 各 ≥4 条断言。
+ * core 三件套 + adapter 解析（0.3.0 语义）。
+ * 重点覆盖：workspaceRoot 必填、policyId 不默认、空 criteria RED、reproCmd 跨平台。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -10,46 +10,57 @@ import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/eviden
 import { decide } from '../lib/core/gate.js'
 import { z } from '../lib/core/mini-schema.js'
 
+const ROOT = process.cwd()
+
 // ---------- contract.js ----------
-test('contract: freeze 生成 12 位十六进制 id', () => {
-  const c = freezeContract({ objective: '做一件事', criteria: [{ id: 'AC1', text: '有证据', checkIds: ['t'] }] })
+test('contract: 生成 12 位十六进制 id', () => {
+  const c = freezeContract({ objective: '做一件事', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: '有证据', checkIds: ['t'] }] })
   assert.match(c.id, /^[0-9a-f]{12}$/)
-  assert.equal(c.policyId, 'code-change')
 })
-test('contract: 同内容同 id（规范化稳定）', () => {
-  const a = freezeContract({ objective: 'x', constraints: ['c1'], criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
-  const b = freezeContract({ objective: 'x', constraints: ['c1'], criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
+test('contract: 同内容同 id', () => {
+  const a = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
+  const b = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   assert.equal(a.id, b.id)
 })
-test('contract: 改一个字 id 就变（冻结语义）', () => {
-  const a = freezeContract({ objective: 'x' })
-  const b = freezeContract({ objective: 'y' })
-  assert.notEqual(a.id, b.id)
+test('contract: 改 objective 换 id', () => {
+  const a = freezeContract({ objective: 'x', workspaceRoot: ROOT })
+  assert.notEqual(a.id, freezeContract({ objective: 'y', workspaceRoot: ROOT }).id)
 })
-test('contract: 空 objective 抛错', () => {
-  assert.throws(() => freezeContract({ objective: '' }), /objective/)
+test('contract: 缺 workspaceRoot / 相对路径 / 不存在 → throw', () => {
+  assert.throws(() => freezeContract({ objective: 'x' }), /workspaceRoot 必填/)
+  assert.throws(() => freezeContract({ objective: 'x', workspaceRoot: 'relative/dir' }), /必须是绝对路径/)
+  assert.throws(() => freezeContract({ objective: 'x', workspaceRoot: ROOT + '/__nope__' }), /不存在/)
 })
-test('contract: validateContract 拦住坏 checkIds', () => {
-  const errs = validateContract({ id: 'abc123456789', objective: 'x', constraints: [], criteria: [{ id: 'AC1', text: 't' }] })
+test('contract: 空 objective → throw', () => {
+  assert.throws(() => freezeContract({ objective: '', workspaceRoot: ROOT }), /objective/)
+})
+test('P0-1 前提: policyId 不再默认填充', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT })
+  assert.equal(c.policyId, undefined)
+  const d = freezeContract({ objective: 'x', workspaceRoot: ROOT, policyId: 'code-change' })
+  assert.equal(d.policyId, 'code-change')
+})
+test('contract: validateContract 拦住缺 checkIds', () => {
+  const errs = validateContract({ id: 'abc123456789', objective: 'x', constraints: [], workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't' }] })
   assert.ok(errs.some((e) => e.includes('checkIds')))
 })
 
 // ---------- evidence.js ----------
-test('evidence: makeEvidence 推断 E2 与 verified', () => {
+test('evidence: E2 + verified', () => {
   const e = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'exec', ok: true, cmd: 'npm test', exitCode: 0 }] })
   assert.equal(e.level, 'E2')
   assert.equal(e.status, 'verified')
 })
-test('evidence: 无 checks 推断 E0 与 partial', () => {
+test('evidence: 无 checks → E0 + partial', () => {
   const e = makeEvidence({ contractId: 'abc' })
   assert.equal(e.level, 'E0')
   assert.equal(e.status, 'partial')
 })
-test('evidence: failed 状态由失败 check 推断', () => {
+test('evidence: failed 由失败 check 推断', () => {
   const e = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'exec', ok: false, cmd: 'npm test' }] })
   assert.equal(e.status, 'failed')
 })
-test('evidence: evidenceHash 稳定且随内容变化', () => {
+test('evidence: hash 稳定且随内容变化', () => {
   const a = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'x', ok: true }] })
   const b = makeEvidence({ contractId: 'abc', checks: [{ id: 't', type: 'x', ok: false }] })
   assert.match(evidenceHash(a), /^[0-9a-f]{12}$/)
@@ -62,105 +73,76 @@ test('evidence: validateEvidence 拦住非布尔 ok', () => {
 })
 
 // ---------- gate.js ----------
-test('gate: R3 全通过 → GREEN', () => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
+test('gate: 全通过 → GREEN', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'exec', ok: true, cmd: 'npm test' }] })
-  const d = decide(c, e)
-  assert.equal(d.decision, 'GREEN')
-  assert.equal(d.missing.length, 0)
+  assert.equal(decide(c, e).decision, 'GREEN')
 })
-test('P0-1: criteria=[] → RED（空契约不可判通过）', () => {
-  const c = freezeContract({ objective: 'x', criteria: [] })
-  const e = makeEvidence({ contractId: c.id, checks: [] })
-  const d = decide(c, e)
+test('P0-1: criteria=[] → RED 且理由含「不可判通过」', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [] })
+  const d = decide(c, makeEvidence({ contractId: c.id, checks: [] }))
   assert.equal(d.decision, 'RED')
   assert.ok(d.reasons.some((r) => r.includes('不可判通过')))
 })
-test('gate: R1 checkIds 为空 → YELLOW', () => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: [] }] })
-  const e = makeEvidence({ contractId: c.id, checks: [] })
-  const d = decide(c, e)
+test('gate: checkIds 为空 → YELLOW', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: [] }] })
+  const d = decide(c, makeEvidence({ contractId: c.id, checks: [] }))
   assert.equal(d.decision, 'YELLOW')
   assert.ok(d.missing.some((m) => m.includes('未绑定 checkIds')))
 })
-test('gate: R1 缺对应 checks → YELLOW', () => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
-  const e = makeEvidence({ contractId: c.id, checks: [] })
-  assert.equal(decide(c, e).decision, 'YELLOW')
+test('gate: 缺对应 checks → YELLOW', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
+  assert.equal(decide(c, makeEvidence({ contractId: c.id, checks: [] })).decision, 'YELLOW')
 })
-test('gate: R2 check 失败 → RED 且 reproCmd 非空', () => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
+test('gate: check 失败 → RED，reproCmd 取 cmd', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }] })
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'exec', ok: false, cmd: 'npm test', detail: 'exit 1' }] })
   const d = decide(c, e)
   assert.equal(d.decision, 'RED')
-  assert.ok(d.reproCmd && d.reproCmd.length > 0)
-  assert.ok(d.reasons.some((r) => r.includes('npm test')))
+  assert.equal(d.reproCmd, 'npm test')
 })
-test('H2: reproCmd 可被 sh -c 执行且退出非 0（非注释行）', (t) => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
-  // 非 exec 类型失败 check 无 cmd 是合法的，触发 gate 的 reproCmd 兜底
-  const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false }] })
-  const d = decide(c, e)
-  assert.equal(d.decision, 'RED')
-  assert.ok(d.reproCmd && d.reproCmd.trim().length > 0)
-  assert.ok(!d.reproCmd.trim().startsWith('#'), 'reproCmd 不能是注释')
-  // P1-2：先探测 sh，不可用则 skip（不能把环境缺 sh 当成 reproCmd 失败）
-  const probe = spawnSync('sh', ['-c', 'true'], { encoding: 'utf8' })
-  if (probe.error) { t.skip('sh 不可用'); return }
-  const r = spawnSync('sh', ['-c', d.reproCmd], { encoding: 'utf8' })
-  assert.equal(r.error, undefined, 'sh 执行 reproCmd 不应报错')
-  assert.notEqual(r.status, 0, `reproCmd 应退出非 0，实际 ${r.status}`)
-})
-test('H2: exec 失败 check 缺 cmd 在 evidence 层被拒（策略非法）', () => {
-  assert.throws(
-    () => makeEvidence({ contractId: 'x', checks: [{ id: 'k1', type: 'exec', ok: false }] }),
-    /cmd/,
-  )
-})
-
-test('gate: R2 失败优先于 R1 缺证据', () => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: [] }, { id: 'AC2', text: 'u', checkIds: ['k'] }] })
+test('gate: 失败优先于缺证据', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: [] }, { id: 'AC2', text: 'u', checkIds: ['k'] }] })
   const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k', type: 'file.exists', ok: false }] })
   assert.equal(decide(c, e).decision, 'RED')
 })
-
-// ---------- mini-schema（卡片 details 鸭子类型）----------
-test('schema: safeParse 通过返回 data', () => {
-  const s = z.object({ decision: z.enum(['GREEN', 'YELLOW', 'RED']), reasons: z.array(z.string()) })
-  const r = s.safeParse({ decision: 'GREEN', reasons: ['ok'] })
-  assert.equal(r.success, true)
-  assert.deepEqual(r.data.reasons, ['ok'])
+test('P1-3: file.exists 的 reproCmd 用 node -e，跨平台退出非 0', () => {
+  const c = freezeContract({ objective: 'x', workspaceRoot: ROOT, criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
+  const e = makeEvidence({
+    contractId: c.id,
+    checks: [{ id: 'k1', type: 'file.exists', ok: false, path: 'no-such-file-xyz', absPath: ROOT + '/no-such-file-xyz' }],
+  })
+  const d = decide(c, e)
+  assert.equal(d.decision, 'RED')
+  assert.ok(d.reproCmd.includes('node -e'), '应是 node -e 命令')
+  assert.ok(!d.reproCmd.trim().startsWith('#'))
+  const m = d.reproCmd.match(/^node -e "([\s\S]*)" "(.+)"$/)
+  assert.ok(m, '命令形状应可解析')
+  const r = spawnSync(process.execPath, ['-e', m[1].replace(/\\"/g, '"'), m[2]], { encoding: 'utf8' })
+  assert.equal(r.error, undefined)
+  assert.notEqual(r.status, 0)
 })
-test('schema: safeParse 拒绝非法枚举', () => {
-  const s = z.object({ decision: z.enum(['GREEN', 'YELLOW', 'RED']) })
+
+// ---------- mini-schema ----------
+test('schema: safeParse 通过 / 拒绝非法枚举', () => {
+  const s = z.object({ decision: z.enum(['GREEN', 'YELLOW', 'RED']), reasons: z.array(z.string()) })
+  assert.equal(s.safeParse({ decision: 'GREEN', reasons: ['ok'] }).success, true)
   assert.equal(s.safeParse({ decision: 'PURPLE' }).success, false)
 })
 
-// ── P1-4 · parsePlanFromOutput 取最后一个 json 块 ────────────────────
-test('P1-4: 两个 json 块时取后者的 plan', async () => {
+// ---------- P1-4 / P2-4 adapter ----------
+test('P1-4: 两个 json 块取后者', async () => {
   const { parsePlanFromOutput } = await import('../lib/adapter.js')
-  const out = [
-    '```json', '{"plan":[{"title":"旧计划"}]}', '```',
-    '中间文字',
-    '```json', '{"plan":[{"title":"新计划"},{"title":"收尾"}]}', '```',
-  ].join('\n')
-  const plan = parsePlanFromOutput(out)
-  assert.deepEqual(plan, [{ title: '新计划' }, { title: '收尾' }])
+  const out = ['```json', '{"plan":[{"title":"旧"}]}', '```', '中间', '```json', '{"plan":[{"title":"新"},{"title":"收尾"}]}', '```'].join('\n')
+  assert.deepEqual(parsePlanFromOutput(out), [{ title: '新' }, { title: '收尾' }])
 })
 test('P1-4: buildPrompt 不再内嵌示例 plan', async () => {
   const { buildPrompt } = await import('../lib/adapter.js')
   const p = buildPrompt({ task: 'x', outlinePlan: true })
-  assert.ok(!p.includes('第一步'), '不应再内嵌 {"plan":[...]} 示例')
+  assert.ok(!p.includes('第一步'))
   assert.match(p, /json 代码块|json 块|plan 数组/)
 })
-
-test('H2: file.exists 失败时复现命令是 test -f <path>（按类型给命令）', () => {
-  const c = freezeContract({ objective: 'x', criteria: [{ id: 'AC1', text: 't', checkIds: ['k1'] }] })
-  const e = makeEvidence({ contractId: c.id, checks: [{ id: 'k1', type: 'file.exists', ok: false, path: 'no/such/file.txt' }] })
-  const d = decide(c, e)
-  assert.equal(d.decision, 'RED')
-  assert.match(d.reproCmd, /^test -f /, '应为 test -f 形式')
-  assert.ok(!/未提供 cmd/.test(d.reproCmd), '不应再出现「未提供 cmd」')
-  const r = spawnSync('sh', ['-c', d.reproCmd], { encoding: 'utf8' })
-  if (r.error === undefined) assert.notEqual(r.status, 0, '文件不存在时 test -f 应退出非 0')
+test('P2-4: parseResult 只取 RESULT 后第一行', async () => {
+  const { parseResult } = await import('../lib/adapter.js')
+  assert.equal(parseResult('RESULT: ok\n补充说明\n更多'), 'ok')
 })

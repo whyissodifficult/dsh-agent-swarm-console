@@ -1,5 +1,23 @@
 # 更新日志
 
+## 0.3.0 · 门禁可信度加固（破坏性）
+
+**破坏性变更（契约结构）：**
+- `verify_contract` **必须**提供 `workspaceRoot`（绝对路径、必须存在且是目录）。所有检查以它为根执行，结论不再随宿主 cwd 变化。
+- `file.exists` 的 `path` 必须是**相对 `workspaceRoot`** 的相对路径；绝对路径直接判 RED。
+- 契约新增 `testCmd`（可选）：`exec` 检查只允许这一条命令，`cmd` 必须与它完全相等；不声明则拒绝一切 `exec`。
+- `/gate-approve` **必须**带第二参数 `evidenceHash`（先用 `/gate-status` 复制）；非 GREEN 或 hash 不一致一律拒绝。
+- 契约与运行状态改为按 `${sessionId}:${contractId}` 存储；`/gate-status` 无参只列本会话，前缀解析限定本会话且最短 4 位。
+
+**可信度修复：**
+- 删除策略层的 `'npm test'` 兜底：策略不再猜命令；且只有契约显式声明 `policyId`、策略检查 id 全被契约 `checkIds` 覆盖时才启用（杜绝「模型命名即可自证」）
+- `checks` 非法请求不再抛异常，统一返回 `ok:false` 并判 RED（宿主不会收到未捕获异常）
+- `gate-retry` 语义修正：`approved=false`、`stale=true`，保留 `lastApprovedAt` / `lastApprovedHash`
+- `file.exists` 的复现命令改为跨平台的 `node -e "...existsSync..."`，不再依赖 `sh` / `test -f`
+- `RESULT:` 解析只取第一行，避免把后续说明吞进结果
+- 修 `sandbox-spawn` 的 ENOENT 诊断：报完整命令行，不再把参数当可执行文件名
+- 策略 JSON 只保留实际能生成的 `exec` 检查（删除 `exists` / `workspace.diff` 声明）
+
 ## 0.2.2 · 门禁状态可发现：无参列表 + id 前缀
 
 - `/gate-status` 不带参数时列出本会话所有契约（判定、时间、是否放行、是否 stale），解决「id 丢了找不回来」

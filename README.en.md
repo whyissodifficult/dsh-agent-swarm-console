@@ -31,7 +31,7 @@ DeepSeek is the default reasoning workhorse; other providers serve as specialist
 
 ## Status
 
-> ✅ **0.1.5 released** — npm package install and local-directory install are both verified; the delivery gate and three slash commands work. Canvas still in progress.
+> ✅ **0.2.2 released** — npm package install and local-directory install are both verified; the delivery gate and three slash commands (session-scoped) work. Source is developing 0.3.0 (breaking contract changes). Canvas still in progress.
 
 - [x] Competitive research & architecture design
 - [x] Design doc finalized (v1.1)

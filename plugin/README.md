@@ -33,7 +33,7 @@ dsh-swarm-console
 plugin_manager install_bundle dsh-swarm-console
 ```
 
-> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.1.5`，安装后 `verify_*` 工具与三条斜杠命令均可用。
+> 已在 DSH 0.2.2-rc.5 上实测：profile 依赖解析为 `^0.2.2`，安装后 `verify_*` 工具与三条斜杠命令均可用。
 
 ### 从本地目录安装（已验证）
 

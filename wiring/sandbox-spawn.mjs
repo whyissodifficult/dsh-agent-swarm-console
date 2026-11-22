@@ -22,6 +22,8 @@ const FORCE_EPERM = 'WIRING_FORCE_SPAWN_EPERM'
 export function makeSafeSpawn(spawn = nodeSpawnSync) {
   return function safeSpawn(cmd, args, opts = {}) {
     const { timeout } = opts
+    // P1-7：把完整命令行挂在结果上，诊断才不会把参数当可执行文件名
+    const cmdline = [cmd, ...(Array.isArray(args) ? args : [])].map(String).join(' ')
 
     // 1) 正常 pipe。强制模式下首跳不真 spawn，直接构造 EPERM 进入 fd 分支，
     //    让 fd 路径能在宿主终端端到端真跑一次（用于验证"fd 能捕获输出"）。
@@ -37,6 +39,7 @@ export function makeSafeSpawn(spawn = nodeSpawnSync) {
         error: first.error ?? null,
         mode: 'pipe',
         note: null,
+        cmdline,
       }
     }
 
@@ -69,6 +72,7 @@ export function makeSafeSpawn(spawn = nodeSpawnSync) {
         error: null,
         mode: 'fd',
         note: '沙箱禁止管道，已用文件描述符重定向捕获输出',
+        cmdline,
       }
     }
 
@@ -82,6 +86,7 @@ export function makeSafeSpawn(spawn = nodeSpawnSync) {
       error: third.error ?? null,
       mode: 'inherit',
       note: '沙箱禁止管道与文件重定向，已降级为 inherit（无法捕获输出）',
+      cmdline,
     }
   }
 }
@@ -94,7 +99,8 @@ export function spawnErrorText(r, what = '命令') {
     return '沙箱禁止管道（EPERM），' + what + '被阻断。请在宿主终端运行；已尝试 fd 重定向降级。'
   }
   if (r.error?.code === 'ENOENT') {
-    return '未找到可执行文件（ENOENT）：' + what + '。请确认已安装并加入 PATH。'
+    // P1-7：报完整命令行，而不是把参数当成可执行文件名
+    return '未找到可执行文件（ENOENT）：' + (r.cmdline ?? what) + '。请确认已安装并加入 PATH。'
   }
   const text = (r.stderr || r.stdout || '').trim()
   if (text) return text.slice(0, 400)
