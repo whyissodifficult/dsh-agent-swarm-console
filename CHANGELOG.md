@@ -1,3 +1,10 @@
+## 0.1.3 · 让门禁结论自己带复现命令
+
+- `/gate-status` 与 `verify_status`：RED 追加「复现：<cmd>」，YELLOW 追加「缺失证据：<...>」
+- 为什么：H2 要求 RED 必须有可执行复现命令，但此前只有模型侧 `verify_run` 输出里有，
+  用户敲 `/gate-status` 看不到；现在命令与工具输出一致
+- verify_run 把 reproCmd/missing 落进运行记录，status 直接读回
+
 ## 0.1.2 · 插件页文案纠偏
 
 - locale 描述此前写「画布与交付门禁开发中」；门禁已交付，改为「用可机器验证的门禁确认交付；画布开发中」

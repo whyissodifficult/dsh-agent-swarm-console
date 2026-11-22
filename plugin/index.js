@@ -281,13 +281,24 @@ function registerVerifyTools(ctx) {
       output: {
         schema: {
           type: 'object',
-          properties: { known: { type: 'boolean' }, decision: { type: 'string' }, at: { type: 'string' } },
+          properties: {
+            known: { type: 'boolean' },
+            decision: { type: 'string' },
+            at: { type: 'string' },
+            reproCmd: { type: 'string' },
+            missing: { type: 'array', items: { type: 'string' } },
+            approved: { type: 'boolean' },
+            approvedAt: { type: 'string' },
+          },
           required: ['known'],
         },
-        render: (args, v) => [{
-          type: 'text',
-          text: v.known ? `最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}` : '未知 contractId，尚无门禁记录',
-        }],
+        render: (args, v) => {
+          if (!v.known) return [{ type: 'text', text: '未知 contractId，尚无门禁记录' }]
+          const lines = [`最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}${v.approved ? `；已由用户放行 @ ${v.approvedAt}` : '；尚未放行'}`]
+          if (v.reproCmd) lines.push(`复现：${v.reproCmd}`)
+          if (Array.isArray(v.missing) && v.missing.length > 0) lines.push(`缺失证据：${v.missing.join('；')}`)
+          return [{ type: 'text', text: lines.join('\n') }]
+        },
       },
       execute: async (args) => verifyStatus({ contractId: args.contractId }),
     },

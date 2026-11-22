@@ -31,7 +31,7 @@ export function verifyRun({ contractId, evidenceInput, runPolicy }, store = cont
     const d = decide(entry.contract, { checks: [], artifacts: [] })
     const ev = makeEvidence({ contractId })
     const hash = evidenceHash(ev)
-    runStore.set(contractId, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash })
+    runStore.set(contractId, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash, missing: d.missing, reproCmd: d.reproCmd })
     return {
       decision: d.decision, reasons: d.reasons, evidenceHash: hash,
       missing: d.missing,
@@ -45,7 +45,7 @@ export function verifyRun({ contractId, evidenceInput, runPolicy }, store = cont
 
   const d = decide(entry.contract, evidence)
   const hash = evidenceHash(evidence)
-  runStore.set(contractId, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash })
+  runStore.set(contractId, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash, missing: d.missing, reproCmd: d.reproCmd })
   return {
     decision: d.decision,
     reasons: d.reasons,
@@ -60,7 +60,14 @@ export function verifyStatus({ contractId }, runStore = runs) {
   const r = runStore.get(contractId)
   // 未知契约返回 known:false，不落进 GREEN/YELLOW/RED 三态（评审必改3）
   if (!r) return { known: false }
-  return { known: true, decision: r.decision, at: r.at }
+  return {
+    known: true,
+    decision: r.decision,
+    at: r.at,
+    ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}),
+    ...(Array.isArray(r.missing) && r.missing.length > 0 ? { missing: r.missing } : {}),
+    ...(r.approved === true ? { approved: true, approvedAt: r.approvedAt } : {}),
+  }
 }
 
 /**
@@ -119,8 +126,10 @@ export function gateStatus({ contractId }, store = contracts, runStore = runs) {
   const r = runStore.get(contractId)
   if (!r) return { kind: 'success', text: `契约 ${contractId} 尚无门禁决定` }
   const approved = r.approved === true
-  return {
-    kind: 'success',
-    text: `契约 ${contractId}：最近决定 ${r.decision} @ ${r.at}${approved ? `；已由 ${r.by ?? 'user'} 放行 @ ${r.approvedAt}` : '；尚未放行'}`,
-  }
+  const head = `契约 ${contractId}：最近决定 ${r.decision} @ ${r.at}${approved ? `；已由 ${r.by ?? 'user'} 放行 @ ${r.approvedAt}` : '；尚未放行'}`
+  // H2 可见性：RED 必须把复现命令亮给用户，YELLOW 必须把缺失证据亮出来
+  const extra = []
+  if (r.reproCmd) extra.push(`复现：${r.reproCmd}`)
+  if (Array.isArray(r.missing) && r.missing.length > 0) extra.push(`缺失证据：${r.missing.join('；')}`)
+  return { kind: 'success', text: [head, ...extra].join('\n') }
 }

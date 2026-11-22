@@ -85,3 +85,28 @@ test('gate-status 对未知 contractId 返回 error', () => {
   assert.equal(r.kind, 'error')
   assert.match(r.text, /未知契约/)
 })
+
+test('gate-status 在 RED 时带复现命令（H2 可见性）', () => {
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: 'H2 可见性', criteria: [{ id: 'AC1', text: 't', checkIds: ['k'] }],
+  }, s.contracts)
+  const run = verifyRun({ contractId, evidenceInput: { checks: [{ id: 'k', type: 'exec', ok: false, cmd: 'npm test' }] } }, s.contracts, s.runs)
+  assert.equal(run.decision, 'RED')
+  const st = gateStatus({ contractId }, s.contracts, s.runs)
+  assert.equal(st.kind, 'success')
+  assert.match(st.text, /RED/)
+  assert.match(st.text, /复现：npm test/, 'RED 的 gate-status 必须把复现命令亮出来')
+})
+
+test('gate-status 在 YELLOW 时带缺失证据（H1 可见性）', () => {
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: 'H1 可见性', criteria: [{ id: 'AC1', text: '缺绑定的验收条件' }],
+  }, s.contracts)
+  verifyRun({ contractId, evidenceInput: { checks: [] } }, s.contracts, s.runs)
+  const st = gateStatus({ contractId }, s.contracts, s.runs)
+  assert.equal(st.kind, 'success')
+  assert.match(st.text, /YELLOW/)
+  assert.match(st.text, /缺失证据：/, 'YELLOW 的 gate-status 必须列出缺失证据')
+})
