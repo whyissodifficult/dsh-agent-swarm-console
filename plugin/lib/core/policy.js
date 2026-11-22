@@ -1,9 +1,9 @@
 /**
- * P0-3 · 策略加载与转换（0.2.0）。
- * loadPolicy(id) 读 plugin/policies/<id>.json；
- * policyToChecks(policy, contract) 把描述性 checks 转成可执行的检查请求。
- * 说明：策略里的 file.exists / workspace.diff 需要具体输入，不能由策略层伪造，
- * 因此 policy runner 只生成能确定的 exec 检查（tests），其余留给调用方显式提供。
+ * P0-3 · 策略加载与转换（0.3.0）。
+ *
+ * P0-1：策略层不再猜命令——删掉 'npm test' 兜底。
+ * P0-4：exec 只能来自 contract.testCmd；契约没声明就生成不出任何检查。
+ * P2-3：策略 JSON 只声明实际能生成的类型（exec）。
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -19,18 +19,21 @@ export function loadPolicy(id = 'code-change', baseDir = POLICIES_DIR) {
   return data
 }
 
-/** 把策略的 checks 描述转成可执行的检查请求（只生成能确定的 exec 检查）。 */
+/**
+ * 把策略声明转成可执行的检查请求。
+ * 只有契约显式给了 testCmd 才生成 exec；绝不使用默认命令。
+ */
 export function policyToChecks(policy, contract = {}) {
   const out = []
+  const testCmd = typeof contract.testCmd === 'string' ? contract.testCmd.trim() : ''
+  if (testCmd === '') return out
   for (const c of policy.checks ?? []) {
-    if (c.type === 'exec') {
-      const testCmd = (Array.isArray(contract.constraints) ? contract.constraints : [])
-        .map((s) => String(s))
-        .find((s) => s.startsWith('testCmd:'))
-      const cmd = testCmd ? testCmd.slice('testCmd:'.length).trim() : 'npm test'
-      out.push({ id: c.id, type: 'exec', cmd })
-    }
-    // file.exists / workspace.diff 需要路径或宿主 workspaceChanges，不在此伪造
+    if (c.type === 'exec') out.push({ id: c.id, type: 'exec', cmd: testCmd })
   }
   return out
+}
+
+/** 策略声明的检查 id 列表（供 P0-1 判断「策略是否被契约覆盖」）。 */
+export function policyCheckIds(policy) {
+  return (policy.checks ?? []).map((c) => c.id).filter((id) => typeof id === 'string')
 }

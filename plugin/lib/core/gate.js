@@ -63,15 +63,19 @@ export function decide(contract, evidence) {
 /** 从失败 check 构造可复制执行的最小复现命令（按检查类型给对应命令）。 */
 function reproFor(check) {
   if (typeof check.cmd === 'string' && check.cmd.trim() !== '') return check.cmd
-  // file.exists：文件缺失时 `test -f` 退出 1，正好复现这次失败
-  if (check.type === 'file.exists' && typeof check.path === 'string' && check.path !== '') {
-    return `test -f ${shellQuote(check.path)}`
+  // P1-3 · file.exists：用 node -e 判断，跨平台（不依赖 sh / test -f）；
+  // 有 absPath 时写绝对路径，保证命令在任何 cwd 下都指向同一文件。
+  if (check.type === 'file.exists') {
+    const target = typeof check.absPath === 'string' && check.absPath !== '' ? check.absPath : check.path
+    if (typeof target === 'string' && target !== '') {
+      return `node -e "process.exit(require('node:fs').existsSync(process.argv[1])?0:1)" ${dq(target)}`
+    }
   }
-  // 其余情况兜底：给一条 sh -c 可直接执行且退出非 0 的真命令，不是装饰性注释
+  // 其余情况兜底：给一条可直接执行且退出非 0 的真命令，不是装饰性注释
   return `echo "check ${check.id} 无可执行复现命令（该检查类型未提供路径/命令）" && exit 1`
 }
 
-/** POSIX 单引号包裹，内部单引号转义为 '\'' */
-function shellQuote(value) {
-  return "'" + String(value).replace(/'/g, "'\\''") + "'"
+/** 双引号包裹（cmd 与 sh 都可解析），内部双引号转义 */
+function dq(value) {
+  return '"' + String(value).replace(/"/g, '\\"') + '"'
 }
