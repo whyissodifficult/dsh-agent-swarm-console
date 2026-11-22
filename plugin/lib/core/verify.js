@@ -31,11 +31,35 @@ function splitKey(key) {
   return idx < 0 ? ['default', key] : [key.slice(0, idx), key.slice(idx + 1)]
 }
 
-/** verify_contract：冻结契约（按会话存），返回 id。 */
-export function verifyContract(input, sessionId = 'default', store = contracts) {
+/** verify_contract：冻结契约（按会话存），进入待确认状态。 */
+export function verifyContract(input, sessionId = 'default', store = contracts, runStore = runs) {
   const c = freezeContract(input)
   store.set(contractKey(c.id, sessionId), { contract: c, frozenAt: c.frozenAt })
-  return { contractId: c.id }
+  const rk = runKey(c.id, sessionId)
+  // 0.4.0：确认是状态不是内容——同一契约重复冻结不重置已确认
+  if (!runStore.has(rk)) runStore.set(rk, { confirmed: false })
+  return {
+    contractId: c.id,
+    pending: true,
+    hint: `契约已冻结，等待用户确认：/gate-freeze ${c.id}`,
+  }
+}
+
+/**
+ * 0.4.0 · /gate-freeze：用户确认契约（模型无对应工具，H3 由结构保证）。
+ * 确认状态与会话/契约绑定，不进入契约哈希。
+ */
+export function gateFreeze({ contractId, sessionId = 'default' }, store = contracts, runStore = runs) {
+  const resolved = resolveContractId(contractId, sessionId, store)
+  if (resolved.error) return { kind: 'error', text: resolved.error }
+  const id = resolved.id
+  const rk = runKey(id, sessionId)
+  const prev = runStore.get(rk) ?? {}
+  if (prev.confirmed === true) {
+    return { kind: 'success', text: `契约 ${id} 已确认（${prev.confirmedAt}），无需重复` }
+  }
+  runStore.set(rk, { ...prev, confirmed: true, confirmedAt: new Date().toISOString(), confirmedBy: 'user' })
+  return { kind: 'success', text: `契约 ${id} 已由用户确认（frozen），现在可以执行 verify_run` }
 }
 
 /**
@@ -60,11 +84,21 @@ export function resolveContractId(input, sessionId = 'default', store = contract
  * verify_run：执行检查请求 → 三态判定。
  * H1：没有检查请求时不判 GREEN（gate 的 R1 保证）。
  */
-export function verifyRun({ contractId, sessionId = 'default', evidenceInput, runPolicy, checkDeps, usePolicy }, store = contracts, runStore = runs) {
+export async function verifyRun({ contractId, sessionId = 'default', evidenceInput, runPolicy, checkDeps, usePolicy }, store = contracts, runStore = runs) {
   const rk = runKey(contractId, sessionId)
   const entry = store.get(contractKey(contractId, sessionId))
   if (!entry) return { decision: 'RED', reasons: [`未知 contractId ${contractId}`], evidenceHash: '' }
   const contract = entry.contract
+
+  // 0.4.0：契约必须由用户确认，否则不生成检查、不写 evidence
+  const prevRun = runStore.get(rk)
+  if (prevRun?.confirmed !== true) {
+    return {
+      decision: 'RED',
+      reasons: [`契约尚未由用户确认，请先 /gate-freeze ${contractId}`],
+      evidenceHash: '',
+    }
+  }
 
   // P0-1：只有契约显式声明 policyId，且策略的每个检查 id 都被契约 checkIds 覆盖，才启用策略
   let policyNote
@@ -90,7 +124,7 @@ export function verifyRun({ contractId, sessionId = 'default', evidenceInput, ru
     const d = decide(contract, { checks: [], artifacts: [] })
     const ev = makeEvidence({ contractId })
     const hash = evidenceHash(ev)
-    runStore.set(rk, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash, missing: d.missing, reproCmd: d.reproCmd })
+    runStore.set(rk, { ...confirmFlags(prevRun), decision: d.decision, at: new Date().toISOString(), evidenceHash: hash, missing: d.missing, reproCmd: d.reproCmd })
     return {
       decision: d.decision,
       reasons: policyNote ? [...d.reasons, policyNote] : d.reasons,
@@ -101,9 +135,9 @@ export function verifyRun({ contractId, sessionId = 'default', evidenceInput, ru
   }
 
   const evidence = typeof runPolicy === 'function'
-    ? runPolicy(contract, evidenceInput)
-    : (() => {
-        const executed = runChecks(evidenceInput?.checks ?? [], {
+    ? await runPolicy(contract, evidenceInput)
+    : await (async () => {
+        const executed = await runChecks(evidenceInput?.checks ?? [], {
           workspaceRoot: contract.workspaceRoot,
           testCmd: contract.testCmd,
           ...checkDeps,
@@ -118,7 +152,7 @@ export function verifyRun({ contractId, sessionId = 'default', evidenceInput, ru
 
   const d = decide(contract, evidence)
   const hash = evidenceHash(evidence)
-  runStore.set(rk, { decision: d.decision, at: new Date().toISOString(), evidenceHash: hash, missing: d.missing, reproCmd: d.reproCmd })
+  runStore.set(rk, { ...confirmFlags(prevRun), decision: d.decision, at: new Date().toISOString(), evidenceHash: hash, missing: d.missing, reproCmd: d.reproCmd })
   return {
     decision: d.decision,
     reasons: policyNote ? [...d.reasons, policyNote] : d.reasons,
@@ -135,6 +169,8 @@ export function verifyStatus({ contractId, sessionId = 'default' }, runStore = r
   if (!r) return { known: false }
   return {
     known: true,
+    confirmed: r.confirmed === true,
+    ...(r.confirmedAt ? { confirmedAt: r.confirmedAt } : {}),
     decision: r.decision,
     at: r.at,
     evidenceHash: r.evidenceHash,
@@ -198,7 +234,7 @@ export function gateApprove({ contractId, sessionId = 'default', expectedHash },
 }
 
 /** /gate-retry：重算 → YELLOW；approved=false、stale=true，保留上次放行信息。 */
-export function gateRetry({ contractId, sessionId = 'default' }, store = contracts, runStore = runs) {
+export async function gateRetry({ contractId, sessionId = 'default' }, store = contracts, runStore = runs) {
   const resolved = resolveContractId(contractId, sessionId, store)
   if (resolved.error) return { kind: 'error', text: resolved.error }
   const id = resolved.id
@@ -208,7 +244,7 @@ export function gateRetry({ contractId, sessionId = 'default' }, store = contrac
   const lastApprovedAt = wasApproved ? before.approvedAt : before?.lastApprovedAt
   const lastApprovedHash = wasApproved ? before.approvedHash : before?.lastApprovedHash
 
-  const r = verifyRun({ contractId: id, sessionId, evidenceInput: undefined }, store, runStore)
+  const r = await verifyRun({ contractId: id, sessionId, evidenceInput: undefined }, store, runStore)
 
   // verifyRun 覆盖整条记录，这里补回 stale 语义
   const after = runStore.get(rk) ?? {}
@@ -239,7 +275,7 @@ export function gateStatus({ contractId, sessionId = 'default' } = {}, store = c
     rows.sort((a, b) => String(b.run?.at ?? '').localeCompare(String(a.run?.at ?? '')))
     const lines = rows.map(({ id, run }) => {
       if (!run) return `- ${id}  未跑校验`
-      const flags = [run.decision]
+      const flags = [run.confirmed === true ? '已确认' : '待确认', run.decision]
       if (run.stale === true) flags.push('[stale]')
       flags.push(run.approved === true ? '已放行' : '尚未放行')
       return `- ${id}  ${flags.join(' ')}  @ ${run.at ?? '-'}`
@@ -255,7 +291,8 @@ export function gateStatus({ contractId, sessionId = 'default' } = {}, store = c
 
   const approved = r.approved === true
   const stale = r.stale === true
-  const head = `契约 ${id}：最近决定 ${r.decision} @ ${r.at}` +
+  const confirmed = r.confirmed === true
+  const head = `契约 ${id}：${confirmed ? `已确认 @ ${r.confirmedAt}` : '待确认（/gate-freeze）'}；最近决定 ${r.decision} @ ${r.at}` +
     (stale ? ` [stale] 上次放行已失效${r.lastApprovedAt ? `（${r.lastApprovedAt}）` : ''}` : '') +
     (approved ? `；已由 ${r.by ?? 'user'} 放行 @ ${r.approvedAt}` : (stale ? '' : '；尚未放行'))
 
@@ -263,4 +300,13 @@ export function gateStatus({ contractId, sessionId = 'default' } = {}, store = c
   if (r.reproCmd) extra.push(`复现：${r.reproCmd}`)
   if (Array.isArray(r.missing) && r.missing.length > 0) extra.push(`缺失证据：${r.missing.join('；')}`)
   return { kind: 'success', text: [head, ...extra].join('\n') }
+}
+
+
+/** 写新决定时保留确认状态（确认是状态，不是内容）。 */
+function confirmFlags(prev) {
+  if (prev?.confirmed === true) {
+    return { confirmed: true, confirmedAt: prev.confirmedAt, confirmedBy: prev.confirmedBy }
+  }
+  return { confirmed: false }
 }

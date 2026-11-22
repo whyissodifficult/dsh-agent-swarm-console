@@ -10,24 +10,20 @@
  * 模型传入的 ok 一律忽略，并记一条 warning。
  */
 import { existsSync as fsExistsSync } from 'node:fs'
-import { spawnSync as cpSpawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { isAbsolute, relative, resolve } from 'node:path'
+
+const EXEC_TIMEOUT_MS = 10000
 
 /**
  * @param {Array} requests 检查请求
  * @param {{workspaceRoot:string, testCmd?:string, existsSync?:Function, exec?:Function}} deps
- * @returns {{checks:Array, warnings:string[]}}
+ * @returns {Promise<{checks:Array, warnings:string[]}>} 0.4.0 起异步（不再阻塞事件循环）
  */
-export function runChecks(requests, deps = {}) {
+export async function runChecks(requests, deps = {}) {
   const workspaceRoot = deps.workspaceRoot
   const existsSync = deps.existsSync ?? fsExistsSync
-  const exec = deps.exec ?? ((cmd, opts) => cpSpawnSync(cmd, {
-    shell: true,
-    cwd: opts?.cwd,
-    timeout: 10000,
-    encoding: 'utf8',
-    maxBuffer: 8 * 1024 * 1024,
-  }))
+  const exec = deps.exec ?? runExecAsync
 
   const warnings = []
   // 顶层非法（不是数组）也不抛：整体记为一条失败检查，交 gate 判 RED
@@ -38,14 +34,16 @@ export function runChecks(requests, deps = {}) {
     }
   }
 
-  const checks = requests.map((req, i) => {
+  const checks = []
+  for (let i = 0; i < requests.length; i++) {
+    const req = requests[i]
     const fallbackId = req && typeof req === 'object' && typeof req.id === 'string' ? req.id : `checks[${i}]`
     const invalid = (reason) => ({ id: fallbackId, type: String(req?.type ?? 'invalid'), ok: false, detail: `检查请求非法：${reason}` })
 
-    if (!req || typeof req !== 'object') return invalid('必须是对象')
+    if (!req || typeof req !== 'object') { checks.push(invalid('必须是对象')); continue }
     const { id, type } = req
-    if (typeof id !== 'string' || id === '') return invalid('id 必填')
-    if (typeof type !== 'string' || type === '') return invalid('type 必填')
+    if (typeof id !== 'string' || id === '') { checks.push(invalid('id 必填')); continue }
+    if (typeof type !== 'string' || type === '') { checks.push(invalid('type 必填')); continue }
 
     // 模型自报 ok 一律忽略，记 warning
     if (req.ok !== undefined) {
@@ -53,42 +51,69 @@ export function runChecks(requests, deps = {}) {
     }
 
     if (type === 'file.exists') {
-      if (typeof req.path !== 'string' || req.path === '') return invalid('file.exists 必带 path')
-      // P0-2：路径必须是相对 workspaceRoot 的相对路径，绝对路径直接判 RED
+      if (typeof req.path !== 'string' || req.path === '') { checks.push(invalid('file.exists 必带 path')); continue }
       if (isAbsolute(req.path)) {
-        return { id, type, ok: false, path: req.path, detail: '检查路径必须是相对 workspaceRoot 的相对路径' }
+        checks.push({ id, type, ok: false, path: req.path, detail: '检查路径必须是相对 workspaceRoot 的相对路径' }); continue
       }
       if (typeof workspaceRoot !== 'string' || workspaceRoot === '') {
-        return invalid('缺少 workspaceRoot，无法解析相对路径')
+        checks.push(invalid('缺少 workspaceRoot，无法解析相对路径')); continue
       }
       const absPath = resolve(workspaceRoot, req.path)
       // P0-A：必须留在 workspaceRoot 内，`../` 不得越界
       const rel = relative(workspaceRoot, absPath)
       if (rel.startsWith('..') || isAbsolute(rel)) {
-        return { id, type, ok: false, path: req.path, absPath, detail: `检查路径越出 workspaceRoot：${req.path}` }
+        checks.push({ id, type, ok: false, path: req.path, absPath, detail: `检查路径越出 workspaceRoot：${req.path}` }); continue
       }
       const ok = existsSync(absPath) === true
-      return { id, type, ok, path: req.path, absPath, detail: ok ? `文件存在：${req.path}` : `文件不存在：${req.path}` }
+      checks.push({ id, type, ok, path: req.path, absPath, detail: ok ? `文件存在：${req.path}` : `文件不存在：${req.path}` })
+      continue
     }
 
     if (type === 'exec') {
-      if (typeof req.cmd !== 'string' || req.cmd === '') return invalid('exec 必带 cmd')
-      // P0-4：命令白名单——必须与契约 testCmd 完全相等
+      if (typeof req.cmd !== 'string' || req.cmd === '') { checks.push(invalid('exec 必带 cmd')); continue }
       if (typeof deps.testCmd !== 'string' || deps.testCmd === '' || req.cmd !== deps.testCmd) {
-        return { id, type, ok: false, cmd: req.cmd, rejected: true, detail: 'exec 命令未在契约中声明为 testCmd，已拒绝' }
+        checks.push({ id, type, ok: false, cmd: req.cmd, rejected: true, detail: 'exec 命令未在契约中声明为 testCmd，已拒绝' }); continue
       }
-      const r = exec(req.cmd, { cwd: workspaceRoot })
+      const r = await exec(req.cmd, { cwd: workspaceRoot })
       const ok = r.error === undefined && r.status === 0
       const out = { id, type, ok, cmd: req.cmd, exitCode: r.status }
       if (!ok) {
         const msg = r.error?.message ?? r.stderr ?? r.stdout ?? `exit ${r.status}`
         out.detail = String(msg).slice(0, 300)
       }
-      return out
+      checks.push(out)
+      continue
     }
 
-    return invalid(`未知检查类型 ${type}`)
-  })
+    checks.push(invalid(`未知检查类型 ${type}`))
+  }
 
   return { checks, warnings }
+}
+
+
+/** 0.4.0 · 默认异步 exec：spawn + 10s 超时 kill（不再阻塞事件循环）。 */
+function runExecAsync(cmd, opts = {}) {
+  return new Promise((resolvePromise) => {
+    let child
+    try {
+      child = spawn(cmd, { shell: true, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (error) {
+      resolvePromise({ status: null, error, stdout: '', stderr: '' })
+      return
+    }
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const finish = (r) => { if (settled) return; settled = true; clearTimeout(timer); resolvePromise(r) }
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch { /* ignore */ }
+      finish({ status: null, error: new Error(`执行超时（${EXEC_TIMEOUT_MS}ms）已终止`), stdout, stderr })
+    }, EXEC_TIMEOUT_MS)
+
+    child.stdout?.on('data', (d) => { stdout += String(d) })
+    child.stderr?.on('data', (d) => { stderr += String(d) })
+    child.on('error', (error) => finish({ status: null, error, stdout, stderr }))
+    child.on('close', (code) => finish({ status: code, error: undefined, stdout, stderr }))
+  })
 }

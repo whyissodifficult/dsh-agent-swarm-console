@@ -8,7 +8,7 @@
  */
 import { callChat } from './lib/adapter.js'
 import { z } from './lib/core/mini-schema.js'
-import { verifyContract, verifyRun, verifyStatus, guardCaller, gateApprove, gateRetry, gateStatus } from './lib/core/verify.js'
+import { verifyContract, verifyRun, verifyStatus, guardCaller, gateApprove, gateRetry, gateStatus, gateFreeze } from './lib/core/verify.js'
 
 export const inject = ['tools']
 
@@ -147,10 +147,16 @@ function registerGateCommands(ctx) {
         },
       },
       {
+        name: 'gate-freeze',
+        description: '确认（冻结）一个任务契约，确认后才能执行 verify_run（仅用户可触发）',
+        input: { hint: '<contractId|前缀>' },
+        handler: ({ agent, rawInput }) => gateFreeze({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
+      },
+      {
         name: 'gate-retry',
         description: '重跑某契约的门禁校验并刷新决定',
         input: { hint: '<contractId>' },
-        handler: ({ agent, rawInput }) => gateRetry({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
+        handler: async ({ agent, rawInput }) => await gateRetry({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
       },
       {
         name: 'gate-status',
@@ -240,8 +246,8 @@ function registerVerifyTools(ctx) {
         additionalProperties: false,
       },
       output: {
-        schema: { type: 'object', properties: { contractId: { type: 'string' } }, required: ['contractId'] },
-        render: (args, v) => [{ type: 'text', text: `contract ${v.contractId} 已冻结` }],
+        schema: { type: 'object', properties: { contractId: { type: 'string' }, pending: { type: 'boolean' }, hint: { type: 'string' } }, required: ['contractId'] },
+        render: (args, v) => [{ type: 'text', text: `contract ${v.contractId} 已冻结（待确认）\n${v.hint ?? `等待用户确认：/gate-freeze ${v.contractId}`}` }],
       },
       execute: async (args, exec) => verifyContract(args, sessionOf(exec)),
     },
@@ -285,7 +291,7 @@ function registerVerifyTools(ctx) {
         const diffEvidence = typeof wc.summary === 'string' ? wc.summary : (typeof wc.diff === 'string' ? wc.diff : undefined)
         const evidenceInput = args.checks ? { checks: args.checks, diff: diffEvidence } : undefined
         // 0.2.0 P0-3：未显式给 checks 时按 code-change 策略生成检查请求
-        return verifyRun({ contractId: args.contractId, sessionId: sessionOf(exec), evidenceInput, usePolicy: !evidenceInput })
+        return await verifyRun({ contractId: args.contractId, sessionId: sessionOf(exec), evidenceInput, usePolicy: !evidenceInput })
       },
     },
     {
@@ -302,6 +308,8 @@ function registerVerifyTools(ctx) {
           type: 'object',
           properties: {
             known: { type: 'boolean' },
+            confirmed: { type: 'boolean' },
+            confirmedAt: { type: 'string' },
             decision: { type: 'string' },
             at: { type: 'string' },
             reproCmd: { type: 'string' },
@@ -316,7 +324,8 @@ function registerVerifyTools(ctx) {
         },
         render: (args, v) => {
           if (!v.known) return [{ type: 'text', text: '未知 contractId，尚无门禁记录' }]
-          const lines = [`最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}${v.approved ? `；已由用户放行 @ ${v.approvedAt}` : '；尚未放行'}`]
+          const confirmText = v.confirmed ? `已确认${v.confirmedAt ? ' @ ' + v.confirmedAt : ''}` : '待确认（/gate-freeze）'
+          const lines = [`${confirmText}；最近决定 ${v.decision}${v.at ? ' @ ' + v.at : ''}${v.approved ? `；已由用户放行 @ ${v.approvedAt}` : '；尚未放行'}`]
           if (v.evidenceHash) lines.push(`证据：${v.evidenceHash}`)
           if (v.stale) lines.push(`[stale] 上次放行已失效${v.lastApprovedAt ? `（${v.lastApprovedAt}）` : ''}`)
           if (v.reproCmd) lines.push(`复现：${v.reproCmd}`)
@@ -373,7 +382,7 @@ function registerGateCard(ctx) {
           return { status: 'settled', decision: d }
         }
         if (verb === 'retry') {
-          const r = verifyRun({ contractId, evidenceInput: payload?.evidence })
+          const r = await verifyRun({ contractId, sessionId: sessionOf({ agent }), evidenceInput: payload?.evidence })
           const d = {
             callId: proposal.callId, action: proposal.action, phase: 'proposed',
             data: { contractId, decision: r.decision, reasons: r.reasons, ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}) },
