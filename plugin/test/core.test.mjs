@@ -9,7 +9,7 @@ import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
 import * as checksModule from '../lib/core/checks.js'
-import { verifyContract, verifyRun, verifyStatus, newStores, gateFreeze } from '../lib/core/verify.js'
+import { verifyContract, verifyRun, verifyStatus, newStores, gateFreeze, gateStatus } from '../lib/core/verify.js'
 import { z } from '../lib/core/mini-schema.js'
 
 const ROOT = process.cwd()
@@ -193,7 +193,7 @@ test('P1-B: 未知 policyId → RED 且不泄露内部路径', async () => {
   const { contractId } = verifyContract({ objective: 'x', policyId: 'nope',
     workspaceRoot: process.cwd().replace(/\\/g, '/'),
     criteria: [{ id: 'c1', text: 't', checkIds: ['tests'] }] }, 'default', s.contracts, s.runs)
-  gateFreeze({ contractId, sessionId: 'default' }, s.contracts, s.runs)
+  gateFreeze({ contractId, sessionId: 'default', confirm: true}, s.contracts, s.runs)
   const r = await verifyRun({ contractId, usePolicy: true }, s.contracts, s.runs)
   assert.equal(r.decision, 'RED')
   const text = r.reasons.join(' ')
@@ -205,7 +205,7 @@ test('P0: 刚 freeze、还没 verify_run 时 verifyStatus 可 JSON 序列化（�
   const s = newStores()
   const { contractId } = verifyContract({ objective: 'x', workspaceRoot: process.cwd().replace(/\\/g, '/'),
     criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] }, 'default', s.contracts, s.runs)
-  gateFreeze({ contractId }, s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true}, s.contracts, s.runs)
   const st = verifyStatus({ contractId }, s.runs)
   assert.equal(st.confirmed, true, JSON.stringify(st))
   // 关键：不能有「值为 undefined 的自有属性」——宿主序列化会因此报 not lossless JSON
@@ -214,23 +214,67 @@ test('P0: 刚 freeze、还没 verify_run 时 verifyStatus 可 JSON 序列化（�
   assert.equal('decision' in st, false, '尚未跑过时不应带 decision 字段')
 })
 
-test('P0-B: 符号链接/junction 指向工作区外 → RED（realpath 边界）', async () => {
-  const fs = await import('node:fs')
-  const os = await import('node:os')
-  const path = await import('node:path')
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-'))
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'out-'))
-  fs.writeFileSync(path.join(outside, 'secret.txt'), 'x')
-  let linked = false
-  try {
-    fs.symlinkSync(outside, path.join(root, 'link'), 'junction')
-    linked = true
-  } catch { /* Windows 无权限建链接时跳过 */ }
-  if (!linked) return
+test('P0-B: 符号链接/junction 指向工作区外 → RED（注入 realpath，不依赖系统权限）', async () => {
+  // 用注入的 realpath 模拟「词法路径在 workspaceRoot 内、真实路径在外面」，避免 Windows 建链接权限问题
+  const root = 'C:/ws'
   const { checks } = await checksModule.runChecks(
-    [{ id: 'k1', type: 'file.exists', path: 'link/secret.txt' }], { workspaceRoot: root })
+    [{ id: 'k1', type: 'file.exists', path: 'link/secret.txt' }],
+    {
+      workspaceRoot: root,
+      existsSync: () => true,
+      realpathSync: (p) => (p === 'C:/ws' || p === 'C:\\ws' ? 'C:/ws' : 'C:/outside/secret.txt'),
+    })
   assert.equal(checks[0].ok, false, JSON.stringify(checks[0]))
   assert.match(checks[0].detail, /符号链接/, checks[0].detail)
-  fs.rmSync(root, { recursive: true, force: true })
-  fs.rmSync(outside, { recursive: true, force: true })
+})
+
+test('P0-E: /gate-freeze 不带 --yes 只回显契约全文，不确认', () => {
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: '市场调研报告', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    testCmd: 'npm test', testTimeoutMs: 60000, policyId: 'code-change',
+    criteria: [{ id: 'c1', text: '报告完成', checkIds: ['tests'] }],
+  }, 'default', s.contracts, s.runs)
+  const preview = gateFreeze({ contractId }, s.contracts, s.runs)
+  assert.equal(preview.kind, 'success')
+  assert.match(preview.text, /市场调研报告/, '应回显 objective')
+  assert.match(preview.text, /workspaceRoot|工作区/, '应回显 workspaceRoot')
+  assert.match(preview.text, /npm test/, '应回显 testCmd')
+  assert.match(preview.text, /--yes/, '应提示再次确认')
+  assert.notEqual(verifyStatus({ contractId }, s.runs).confirmed, true, '未带 --yes 不应确认')
+  const done = gateFreeze({ contractId, confirm: true }, s.contracts, s.runs)
+  assert.match(done.text, /已由用户确认/)
+  assert.equal(verifyStatus({ contractId }, s.runs).confirmed, true)
+})
+
+test('P1-A: 契约 testTimeoutMs 生效（超时按契约值终止，不是写死 10s）', async () => {
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    testCmd: 'node -e "setTimeout(()=>{},3000)"', testTimeoutMs: 1200,
+    criteria: [{ id: 'c1', text: 't', checkIds: ['tests'] }],
+  }, 'default', s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true }, s.contracts, s.runs)
+  const started = Date.now()
+  const r = await verifyRun({
+    contractId,
+    evidenceInput: { checks: [{ id: 'tests', type: 'exec', cmd: 'node -e "setTimeout(()=>{},3000)"' }] },
+  }, s.contracts, s.runs)
+  const elapsed = Date.now() - started
+  assert.equal(r.decision, 'RED')
+  assert.ok(elapsed < 2500, `应在 ~1200ms 被终止，实际 ${elapsed}ms`)
+  assert.match(r.reasons.join(' '), /执行超时（1200ms）/, r.reasons.join(' '))
+})
+
+test('P1-B: 未确认时的 RED 会写状态，status 不显示 undefined', async () => {
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }],
+  }, 'default', s.contracts, s.runs)
+  await verifyRun({ contractId, evidenceInput: { checks: [] } }, s.contracts, s.runs)
+  const st = verifyStatus({ contractId }, s.runs)
+  assert.equal(st.decision, 'RED')
+  const txt = gateStatus({ contractId }, s.contracts, s.runs).text
+  assert.ok(!txt.includes('undefined'), txt)
 })

@@ -12,7 +12,7 @@ import { existsSync, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 
 /**
- * @param {{objective:string, constraints?:string[], criteria?:Array, workspaceRoot:string, testCmd?:string, policyId?:string, frozenAt?:string}} input
+ * @param {{objective:string, constraints?:string[], criteria?:Array, workspaceRoot:string, testCmd?:string, testTimeoutMs?:number, policyId?:string, frozenAt?:string}} input
  */
 export function freezeContract(input) {
   if (!input || typeof input.objective !== 'string' || input.objective.trim() === '') {
@@ -57,12 +57,21 @@ export function freezeContract(input) {
     policyId = input.policyId.trim()
   }
 
+  // P1-A：单条 exec 的超时由契约声明（毫秒），默认 60s
+  let testTimeoutMs = 60000
+  if (input.testTimeoutMs !== undefined) {
+    const v = Number(input.testTimeoutMs)
+    if (!Number.isFinite(v) || v < 1000 || v > 600000) {
+      throw new Error(`testTimeoutMs 必须是 1000–600000 之间的毫秒数，收到：${input.testTimeoutMs}`)
+    }
+    testTimeoutMs = Math.floor(v)
+  }
   const frozenAt = typeof input.frozenAt === 'string' && input.frozenAt !== '' ? input.frozenAt : new Date().toISOString()
 
-  const canonical = JSON.stringify({ objective: input.objective, constraints, criteria, workspaceRoot, testCmd, policyId })
+  const canonical = JSON.stringify({ objective: input.objective, constraints, criteria, workspaceRoot, testCmd, policyId, testTimeoutMs })
   const id = createHash('sha256').update(canonical).digest('hex').slice(0, 12)
 
-  const contract = { id, objective: input.objective, constraints, criteria, workspaceRoot, frozenAt }
+  const contract = { id, objective: input.objective, constraints, criteria, workspaceRoot, testTimeoutMs, frozenAt }
   if (testCmd !== undefined) contract.testCmd = testCmd
   if (policyId !== undefined) contract.policyId = policyId
   return contract

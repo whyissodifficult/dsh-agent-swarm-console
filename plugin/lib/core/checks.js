@@ -24,6 +24,7 @@ export async function runChecks(requests, deps = {}) {
   const workspaceRoot = deps.workspaceRoot
   const existsSync = deps.existsSync ?? fsExistsSync
   const realpathSync = deps.realpathSync ?? fsRealpathSync
+  const execTimeoutMs = Number.isFinite(deps.timeoutMs) ? deps.timeoutMs : EXEC_TIMEOUT_MS
   const exec = deps.exec ?? runExecAsync
 
   const warnings = []
@@ -84,7 +85,7 @@ export async function runChecks(requests, deps = {}) {
       if (typeof deps.testCmd !== 'string' || deps.testCmd === '' || req.cmd !== deps.testCmd) {
         checks.push({ id, type, ok: false, cmd: req.cmd, rejected: true, detail: 'exec 命令未在契约中声明为 testCmd，已拒绝' }); continue
       }
-      const r = await exec(req.cmd, { cwd: workspaceRoot })
+      const r = await exec(req.cmd, { cwd: workspaceRoot, timeoutMs: execTimeoutMs })
       const ok = r.error === undefined && r.status === 0
       const out = { id, type, ok, cmd: req.cmd, exitCode: r.status }
       if (!ok) {
@@ -102,8 +103,9 @@ export async function runChecks(requests, deps = {}) {
 }
 
 
-/** 0.4.0 · 默认异步 exec：spawn + 10s 超时 kill（不再阻塞事件循环）。 */
+/** 0.4.0 · 默认异步 exec：spawn + 超时 kill（不再阻塞事件循环）。超时取 opts.timeoutMs，缺省 10s。 */
 function runExecAsync(cmd, opts = {}) {
+  const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : EXEC_TIMEOUT_MS
   return new Promise((resolvePromise) => {
     let child
     try {
@@ -118,8 +120,8 @@ function runExecAsync(cmd, opts = {}) {
     const finish = (r) => { if (settled) return; settled = true; clearTimeout(timer); resolvePromise(r) }
     const timer = setTimeout(() => {
       try { child.kill('SIGKILL') } catch { /* ignore */ }
-      finish({ status: null, error: new Error(`执行超时（${EXEC_TIMEOUT_MS}ms）已终止`), stdout, stderr })
-    }, EXEC_TIMEOUT_MS)
+      finish({ status: null, error: new Error(`执行超时（${timeoutMs}ms）已终止`), stdout, stderr })
+    }, timeoutMs)
 
     child.stdout?.on('data', (d) => { stdout += String(d) })
     child.stderr?.on('data', (d) => { stderr += String(d) })

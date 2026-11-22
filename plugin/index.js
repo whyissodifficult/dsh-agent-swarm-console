@@ -148,9 +148,14 @@ function registerGateCommands(ctx) {
       },
       {
         name: 'gate-freeze',
-        description: '确认（冻结）一个任务契约，确认后才能执行 verify_run（仅用户可触发）',
-        input: { hint: '<contractId|前缀>' },
-        handler: ({ agent, rawInput }) => gateFreeze({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
+        description: '查看契约内容并确认：先回显全文，加 --yes 才真正确认（仅用户可触发）',
+        input: { hint: '<contractId|前缀> [--yes]' },
+        handler: ({ agent, rawInput }) => {
+          const raw = String(rawInput ?? '').trim()
+          const confirm = /(^|\s)--yes\s*$/.test(raw)
+          const contractId = raw.replace(/\s*--yes\s*$/, '').trim()
+          return gateFreeze({ contractId, sessionId: sessionOf({ agent }), confirm })
+        },
       },
       {
         name: 'gate-retry',

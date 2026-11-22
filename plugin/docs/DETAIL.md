@@ -38,7 +38,7 @@ capabilityRouting: true
 
 ## verify 三工具（0.3.0 契约结构）
 
-- `verify_contract({objective, workspaceRoot, testCmd?, policyId?, constraints, criteria})` → `{contractId}`，**初始为待确认**（需 `/gate-freeze`）
+- `verify_contract({objective, workspaceRoot, testCmd?, testTimeoutMs?, policyId?, constraints, criteria})` → `{contractId}`，**初始为待确认**（需 `/gate-freeze`）
   - **`workspaceRoot` 必填**：绝对路径、必须存在且是目录；所有检查以它为根
   - `testCmd` 可选：`exec` 检查**唯一允许**的命令；不声明就拒绝一切 `exec`
   - `policyId` 可选：只有显式声明，且策略的检查 id 全部被契约 `checkIds` 覆盖时才启用

@@ -51,7 +51,7 @@ plugin_manager install_bundle <本包目录的绝对路径>
 swarm_run         把一个任务交给外部 agent 跑一次（需先配 externalAgents + apiKeyEnv）
 verify_contract   冻结契约（objective / workspaceRoot / criteria / constraints，testCmd 可选）
 verify_run        跑证据校验：checks 是「检查请求」，由插件实际执行
-/gate-freeze      确认契约（仅用户可触发）：/gate-freeze <id|前缀>
+/gate-freeze      先看契约全文，再加 --yes 确认：/gate-freeze <id|前缀> [--yes]
 /gate-status      不带参数列出本会话所有契约；带参数看单条（支持 id 前缀，如 7e28）
 /gate-approve     放行：/gate-approve <id|前缀> <证据hash>（仅 GREEN + hash 一致时允许）
 /gate-retry       清空证据并重算（不重跑检查）；旧放行标 stale
@@ -66,7 +66,16 @@ contract 7e280e5c4f7e 已冻结（待确认）
 等待用户确认：/gate-freeze 7e280e5c4f7e       ← 契约不经用户确认不能跑
 
 > /gate-freeze 7e28
-契约 7e280e5c4f7e 已由用户确认（frozen），现在可以执行 verify_run
+契约 7e280e5c4f7e：
+  目标：给 README 加安装节
+  工作区：/path/to/your/project
+  验收条件（1）：
+    - c1：安装节存在（检查：k1）
+
+确认无误后执行：/gate-freeze 7e280e5c4f7e --yes
+
+> /gate-freeze 7e28 --yes
+契约 7e280e5c4f7e 已由用户确认（frozen）@ …，现在可以执行 verify_run
 
 > verify_run {"contractId":"7e280e5c4f7e","checks":[{"id":"k1","type":"file.exists","path":"README.md"}]}
 门禁 GREEN：全部 1 条验收条件均有通过证据
@@ -94,7 +103,7 @@ contract 7e280e5c4f7e 已冻结（待确认）
 ⚠️ 两条必须知道的行为：
 
 - **`exec` 检查以当前用户权限执行命令**，等同于你自己在终端敲那条命令。请只把可信命令写进契约，不要接受来源不明的检查请求。
-- **异步执行**：检查用 `spawn` 异步跑，单条 10 秒超时后被强制终止，超时按失败计入证据；执行期间不阻塞宿主。
+- **异步执行**：检查用 `spawn` 异步跑；单条超时由契约的 `testTimeoutMs` 决定（默认 60 秒，范围 1–600 秒），超时被强制终止并按失败计入证据；执行期间不阻塞宿主。
 
 尚未实现（不承诺）：
 

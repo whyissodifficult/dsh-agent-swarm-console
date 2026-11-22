@@ -17,6 +17,15 @@ const contracts = new Map()
 const runs = new Map()
 
 /** 运行状态键：`${sessionId}:${contractId}` */
+
+/** 结构性 RED（未确认 / 未知策略 / 未知契约）：写一条状态记录，避免 status 读不到决定。 */
+function structuralRed(rk, runStore, reasons) {
+  const at = new Date().toISOString()
+  const prev = runStore.get(rk) ?? {}
+  runStore.set(rk, { ...prev, decision: 'RED', at, reasons, structural: true, evidenceHash: '' })
+  return { decision: 'RED', reasons, evidenceHash: '', at }
+}
+
 export function runKey(contractId, sessionId = 'default') {
   return `${sessionId}:${contractId}`
 }
@@ -49,17 +58,40 @@ export function verifyContract(input, sessionId = 'default', store = contracts, 
  * 0.4.0 · /gate-freeze：用户确认契约（模型无对应工具，H3 由结构保证）。
  * 确认状态与会话/契约绑定，不进入契约哈希。
  */
-export function gateFreeze({ contractId, sessionId = 'default' }, store = contracts, runStore = runs) {
+export function gateFreeze({ contractId, sessionId = 'default', confirm = false }, store = contracts, runStore = runs) {
   const resolved = resolveContractId(contractId, sessionId, store)
   if (resolved.error) return { kind: 'error', text: resolved.error }
   const id = resolved.id
   const rk = runKey(id, sessionId)
   const prev = runStore.get(rk) ?? {}
+  const entry = store.get(contractKey(id, sessionId))
+  const c = entry?.contract
+
+  // P0-E：确认前必须让用户看见契约全文（否则等于蒙着眼睛签字）
+  if (confirm !== true) {
+    const lines = [`契约 ${id}：`, `  目标：${c?.objective ?? '(缺失)'}`, `  工作区：${c?.workspaceRoot ?? '(缺失)'}`]
+    if (c?.testCmd) lines.push(`  测试命令（唯一允许的 exec）：${c.testCmd}`)
+    if (c?.testTimeoutMs) lines.push(`  单条命令超时：${c.testTimeoutMs} ms`)
+    if (c?.policyId) lines.push(`  策略：${c.policyId}`)
+    const crit = Array.isArray(c?.criteria) ? c.criteria : []
+    lines.push(`  验收条件（${crit.length}）：`)
+    for (const it of crit) {
+      lines.push(`    - ${it.id}：${it.text}${Array.isArray(it.checkIds) && it.checkIds.length ? `（检查：${it.checkIds.join(', ')}）` : '（未绑定检查）'}`)
+    }
+    if (prev.confirmed === true) {
+      lines.push(`\n已确认于 ${prev.confirmedAt}，无需重复。`)
+    } else {
+      lines.push(`\n确认无误后执行：/gate-freeze ${id} --yes`)
+    }
+    return { kind: 'success', text: lines.join('\n') }
+  }
+
   if (prev.confirmed === true) {
     return { kind: 'success', text: `契约 ${id} 已确认（${prev.confirmedAt}），无需重复` }
   }
-  runStore.set(rk, { ...prev, confirmed: true, confirmedAt: new Date().toISOString(), confirmedBy: 'user' })
-  return { kind: 'success', text: `契约 ${id} 已由用户确认（frozen），现在可以执行 verify_run` }
+  const at = new Date().toISOString()
+  runStore.set(rk, { ...prev, confirmed: true, confirmedAt: at, confirmedBy: 'user' })
+  return { kind: 'success', text: `契约 ${id} 已由用户确认（frozen）@ ${at}，现在可以执行 verify_run` }
 }
 
 /**
@@ -87,17 +119,13 @@ export function resolveContractId(input, sessionId = 'default', store = contract
 export async function verifyRun({ contractId, sessionId = 'default', evidenceInput, runPolicy, checkDeps, usePolicy }, store = contracts, runStore = runs) {
   const rk = runKey(contractId, sessionId)
   const entry = store.get(contractKey(contractId, sessionId))
-  if (!entry) return { decision: 'RED', reasons: [`未知 contractId ${contractId}`], evidenceHash: '' }
+  if (!entry) return structuralRed(rk, runStore, [`未知 contractId ${contractId}`])
   const contract = entry.contract
 
   // 0.4.0：契约必须由用户确认，否则不生成检查、不写 evidence
   const prevRun = runStore.get(rk)
   if (prevRun?.confirmed !== true) {
-    return {
-      decision: 'RED',
-      reasons: [`契约尚未由用户确认，请先 /gate-freeze ${contractId}`],
-      evidenceHash: '',
-    }
+    return structuralRed(rk, runStore, [`契约尚未由用户确认，请先 /gate-freeze ${contractId}`])
   }
 
   // P0-1：只有契约显式声明 policyId，且策略的每个检查 id 都被契约 checkIds 覆盖，才启用策略
@@ -107,7 +135,7 @@ export async function verifyRun({ contractId, sessionId = 'default', evidenceInp
     try {
       policy = loadPolicy(contract.policyId)
     } catch {
-      return { decision: 'RED', reasons: [`未知策略 ${contract.policyId}（可用策略见 plugin/policies）`], evidenceHash: '' }
+      return structuralRed(rk, runStore, [`未知策略 ${contract.policyId}（可用策略见 plugin/policies）`])
     }
     const declared = policyCheckIds(policy)
     const covered = new Set(contract.criteria.flatMap((c) => c.checkIds))
@@ -140,6 +168,8 @@ export async function verifyRun({ contractId, sessionId = 'default', evidenceInp
         const executed = await runChecks(evidenceInput?.checks ?? [], {
           workspaceRoot: contract.workspaceRoot,
           testCmd: contract.testCmd,
+          // P1-A：超时由契约声明（默认 60s），调用方注入的 checkDeps 仍可覆盖
+          timeoutMs: contract.testTimeoutMs,
           ...checkDeps,
         })
         return makeEvidence({
@@ -294,7 +324,8 @@ export function gateStatus({ contractId, sessionId = 'default' } = {}, store = c
   const approved = r.approved === true
   const stale = r.stale === true
   const confirmed = r.confirmed === true
-  const head = `契约 ${id}：${confirmed ? `已确认 @ ${r.confirmedAt}` : '待确认（/gate-freeze）'}；最近决定 ${r.decision} @ ${r.at}` +
+  const decisionText = r.decision ? `最近决定 ${r.decision}${r.at ? ' @ ' + r.at : ''}` : '尚未跑过 verify_run'
+  const head = `契约 ${id}：${confirmed ? `已确认 @ ${r.confirmedAt}` : '待确认（/gate-freeze）'}；${decisionText}` +
     (stale ? ` [stale] 上次放行已失效${r.lastApprovedAt ? `（${r.lastApprovedAt}）` : ''}` : '') +
     (approved ? `；已由 ${r.by ?? 'user'} 放行 @ ${r.approvedAt}` : (stale ? '' : '；尚未放行'))
 

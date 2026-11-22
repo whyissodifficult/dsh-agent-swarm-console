@@ -26,14 +26,18 @@ test('未确认时 verify_run → RED，且不写 evidence', async () => {
   assert.equal(r.decision, 'RED')
   assert.match(r.reasons.join(' '), /尚未由用户确认/)
   assert.equal(r.evidenceHash, '')
-  // 只有 pending 记录，没有任何 decision/evidence
-  assert.equal(s.runs.get(runKey(contractId)).decision, undefined)
+  // 0.4.4：结构性 RED 会写一条状态记录（decision=RED、structural=true、无证据），
+  // 这样 /gate-status 不会显示「最近决定 undefined」
+  const rec = s.runs.get(runKey(contractId))
+  assert.equal(rec.decision, 'RED')
+  assert.equal(rec.structural, true)
+  assert.equal(rec.evidenceHash, '')
 })
 
 test('gate-freeze 后 verify_run → 正常三态（GREEN）', async () => {
   const s = newStores()
   const { contractId } = mk(s)
-  const f = gateFreeze({ contractId }, s.contracts, s.runs)
+  const f = gateFreeze({ contractId, confirm: true}, s.contracts, s.runs)
   assert.equal(f.kind, 'success')
   const r = await verifyRun({
     contractId, evidenceInput: { checks: [{ id: 'tests', type: 'exec', cmd: 'npm test' }] }, checkDeps: okExec,
@@ -45,8 +49,8 @@ test('gate-freeze 后 verify_run → 正常三态（GREEN）', async () => {
 test('重复 freeze → 提示无需重复', () => {
   const s = newStores()
   const { contractId } = mk(s)
-  gateFreeze({ contractId }, s.contracts, s.runs)
-  const again = gateFreeze({ contractId }, s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true}, s.contracts, s.runs)
+  const again = gateFreeze({ contractId, confirm: true}, s.contracts, s.runs)
   assert.equal(again.kind, 'success')
   assert.match(again.text, /无需重复/)
 })
@@ -55,7 +59,7 @@ test('确认不改契约哈希（确认是状态不是内容）', () => {
   const s = newStores()
   const { contractId } = mk(s)
   const before = s.contracts.get('default:' + contractId).contract.id
-  gateFreeze({ contractId }, s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true}, s.contracts, s.runs)
   const after = s.contracts.get('default:' + contractId).contract.id
   assert.equal(after, before)
 })
@@ -65,7 +69,7 @@ test('跨会话：A 确认后，B 的 verify_run 仍判未确认', async () => {
   // 两个会话各冻结同一份契约（id 相同），只在 A 确认
   const { contractId } = mk(s, 'sA')
   mk(s, 'sB')
-  gateFreeze({ contractId, sessionId: 'sA' }, s.contracts, s.runs)
+  gateFreeze({ contractId, sessionId: 'sA', confirm: true}, s.contracts, s.runs)
   // A 可以跑
   const a = await verifyRun({ contractId, sessionId: 'sA',
     evidenceInput: { checks: [{ id: 'tests', type: 'exec', cmd: 'npm test' }] }, checkDeps: okExec }, s.contracts, s.runs)
@@ -80,7 +84,7 @@ test('gate-status：待确认 / 已确认 两种文案', () => {
   const s = newStores()
   const { contractId } = mk(s)
   assert.match(gateStatus({ contractId }, s.contracts, s.runs).text, /待确认/)
-  gateFreeze({ contractId }, s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true}, s.contracts, s.runs)
   assert.match(gateStatus({ contractId }, s.contracts, s.runs).text, /已确认/)
   const st = verifyStatus({ contractId }, s.runs)
   assert.equal(st.confirmed, true)

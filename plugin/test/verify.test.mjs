@@ -8,7 +8,9 @@ import { verifyContract as __verifyContract, verifyRun, verifyStatus, newStores,
 
 function verifyContract(input, sessionId = 'default', store, runStore) {
   const r = __verifyContract(input, sessionId, store, runStore)
-  gateFreeze({ contractId: r.contractId, sessionId }, store, runStore)
+  // 0.4.4：确认机制上线后，测试默认视为用户已确认（专测确认流程的见 freeze.test.mjs）
+  gateFreeze({ contractId: r.contractId, sessionId, confirm: true }, store, runStore)
+  gateFreeze({ contractId: r.contractId, sessionId, confirm: true}, store, runStore)
   return r
 }
 import { makeEvidence } from '../lib/core/evidence.js'
