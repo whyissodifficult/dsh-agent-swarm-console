@@ -1,15 +1,15 @@
 {
   "name": "dsh-swarm-console",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "type": "module",
-  "description": "Run one external agent from DSH, with a machine-checkable delivery gate (canvas in progress).",
+  "description": "A machine-checkable delivery gate for DeepSeek Harness: contract is user-confirmed, evidence is executed by the plugin, only the user can approve.",
   "keywords": [
+    "dsh",
     "deepseek-harness",
-    "dsh-plugin",
-    "agent",
-    "swarm",
+    "delivery-gate",
     "verification",
-    "gate"
+    "evidence",
+    "contract"
   ],
   "repository": {
     "type": "git",

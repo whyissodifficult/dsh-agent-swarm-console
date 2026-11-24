@@ -49,7 +49,6 @@ plugin_manager install_bundle <本包目录的绝对路径>
 ## 快速开始
 
 ```text
-swarm_run         把一个任务交给外部 agent 跑一次（需先配 externalAgents + apiKeyEnv）
 verify_contract   冻结契约（objective / workspaceRoot / criteria / constraints，testCmd 可选）
 verify_run        跑证据校验：checks 是「检查请求」，由插件实际执行
 /gate-freeze      先看契约全文，再加 --yes 确认：/gate-freeze <id|前缀> [--yes]

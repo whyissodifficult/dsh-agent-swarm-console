@@ -11,13 +11,10 @@ function verifyContract(input, sessionId = 'default', store, runStore) {
   const r = __verifyContract(input, sessionId, store, runStore)
   // 0.4.4：确认机制上线后，测试默认视为用户已确认（专测确认流程的见 freeze.test.mjs）
   gateFreeze({ contractId: r.contractId, sessionId, confirm: true }, store, runStore)
-  gateFreeze({ contractId: r.contractId, sessionId }, store, runStore)
   return r
 }
 
-const cfg = {
-  externalAgents: { a: { baseUrl: 'http://x', apiKeyEnv: 'K', models: ['m'] } },
-}
+const cfg = {}
 
 function fakeCtx(services = {}) {
   const registered = { tools: new Map(), skills: [], cards: [] }
@@ -99,7 +96,7 @@ test('必改1: skill 与卡片 kind 指向同名（propose_action 可达）', as
 test('必改1: skills 服务缺失时 verify_* 三工具仍注册（不阻塞）', async () => {
   const { ctx, registered } = fakeCtx() // 无 skills、无 cards
   assert.doesNotThrow(() => apply(ctx, cfg))
-  for (const n of ['swarm_run', 'verify_contract', 'verify_run', 'verify_status']) {
+  for (const n of ['verify_contract', 'verify_run', 'verify_status']) {
     assert.ok(registered.tools.has(n), `缺少 ${n}`)
   }
 })

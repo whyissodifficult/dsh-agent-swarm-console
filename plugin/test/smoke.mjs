@@ -17,17 +17,7 @@ const ok = (name, fn) => {
   catch (e) { console.error(`  ❌ ${name}: ${e.message}`); process.exitCode = 1 }
 }
 
-const validConfig = {
-  externalAgents: {
-    deepseek: {
-      baseUrl: 'https://api.deepseek.com/v1',
-      apiKeyEnv: 'DEEPSEEK_API_KEY',
-      models: ['deepseek-flash'],
-      capabilities: ['reasoning'],
-    },
-  },
-  capabilityRouting: true,
-}
+const validConfig = {} // 0.5.0：只做门禁，不再需要 externalAgents
 
 const registered = new Map()
 const fakeCtx = {
@@ -38,34 +28,13 @@ const fakeCtx = {
   },
 }
 
-console.log('\n=== swarm_run 形状 ===')
-ok('apply 注册了工具', () => {
-  apply(fakeCtx, validConfig)
-  assert.ok(registered.size >= 1, '没有注册任何工具')
+apply(fakeCtx, validConfig)
+console.log('\n=== 工具注册（0.5.0 只做门禁）===')
+ok('注册了三个 verify_* 工具', () => {
+  for (const n of ['verify_contract', 'verify_run', 'verify_status']) assert.ok(registered.has(n), '缺少 ' + n)
 })
-ok("注册了 swarm_run", () => assert.ok(registered.has('swarm_run')))
-ok('swarm_run.parameters.required 含 task', () => {
-  assert.ok(registered.get('swarm_run').parameters.required.includes('task'))
-})
-ok('output.render 返回 text 块', () => {
-  const blocks = registered.get('swarm_run').output.render({}, { stopReason: 'completed', text: 'hi', ms: 1 })
-  assert.equal(blocks[0].type, 'text')
-  assert.equal(blocks[0].text, '[completed] hi')
-})
-
-console.log('\n=== verify 三工具已注册 ===')
-for (const name of ['verify_contract', 'verify_run', 'verify_status']) {
-  ok(`注册了 ${name}`, () => assert.ok(registered.has(name), `缺少 ${name}`))
-}
-
-console.log('\n=== 错误配置必须 throw（反证）===')
-ok('config.externalAgents 传字符串 → throw', () => {
-  assert.throws(() => apply(fakeCtx, { externalAgents: 'bad' }), /必须是对象/)
-})
-ok('画像缺 apiKeyEnv → throw', () => {
-  assert.throws(() => apply(fakeCtx, {
-    externalAgents: { bad: { baseUrl: 'http://x', models: ['m'] } },
-  }), /apiKeyEnv/)
+ok('不再注册 swarm_run', () => {
+  assert.equal(registered.has('swarm_run'), false, 'swarm_run 应已移除')
 })
 
 console.log('\n=== 包自包含（blocker 永久回归）===')

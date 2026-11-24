@@ -1,5 +1,16 @@
 # 更新日志
 
+## 0.5.0 · 收窄定位：只做门禁（破坏性）
+
+为什么：多 agent 编排/可视化已经有人做了，本插件的价值在「验收」这一层。继续挂着“跑外部 agent”
+的工具只会让定位含糊、让评审看不懂它解决什么问题。
+
+- **移除** `swarm_run` 工具与 `externalAgents` 配置（连同 `baseUrl`/`apiKeyEnv`/`models` 校验）
+- 插件现在只提供：`verify_contract` / `verify_run` / `verify_status` + 四条斜杠命令 + 运行期 skill
+- 文案与包描述改为“交付门禁”定位；仓库名与包名保留（改名会丢安装量与链接，不值得）
+- 测试：删除 swarm_run 相关断言，其余 88 条全绿
+
+
 ## 0.4.5 · 修复 Android/Termux 上 exec 检查恒失败
 
 - **现象**：DSH 手机端（0.2.1-rc.2，Android/Termux，Node 26）上带 `exec` 的契约必然 RED：

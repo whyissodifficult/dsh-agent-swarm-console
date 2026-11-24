@@ -19,7 +19,7 @@ function verifyContract(input, sessionId = 'default', store, runStore) {
 }
 
 const ROOT = process.cwd()
-const cfg = { externalAgents: { a: { baseUrl: 'http://x', apiKeyEnv: 'K', models: ['m'] } } }
+const cfg = {  }
 
 function fakeCtx(services = {}) {
   const base = {
