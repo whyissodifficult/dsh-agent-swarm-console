@@ -6,6 +6,9 @@
 > ✅ 已发布 `dsh-swarm-console@0.5.0` · 只做门禁（0.5.0 起移除多 agent 工具）
 > 0.3 契约结构（破坏性）：`workspaceRoot` 必填、`testCmd` 白名单、`/gate-approve` 需证据 hash、工作区路径不得越界
 > 已实测：npm 安装与本地目录安装两条路径均可用；**桌面端 DSH 0.2.2-rc.5、手机端 0.2.1-rc.2 均可安装并运行**
+>
+> 包名（`dsh-swarm-console`）与仓库名沿用早期「swarm 编排」实验的历史，**0.5.0 起专注交付门禁**：
+> 编排交给 DSH 原生的 `subagent` / `workflow`，验收交给这个插件。名字是旧账，功能是新的。
 
 [English](README.en.md) · 中文
 

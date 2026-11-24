@@ -1,4 +1,7 @@
-# Swarm Console（`dsh-swarm-console`）
+# DSH 交付门禁（`dsh-swarm-console`）
+
+> 包名（`dsh-swarm-console`）与仓库名沿用早期「swarm 编排」实验的历史，**0.5.0 起专注交付门禁**：
+> 编排交给 DSH 原生的 `subagent` / `workflow`，验收交给这个插件。名字是旧账，功能是新的。
 
 > 让 agent 说「完成」之前，先过一道可机器验证的交付门禁。
 

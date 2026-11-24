@@ -1,5 +1,7 @@
 # DSH Agent Swarm Console
 
+> The package/repo name is a leftover from an early "swarm orchestration" experiment; **since 0.5.0 this plugin focuses on the delivery gate only** — orchestration stays with DSH's native `subagent`/`workflow`.
+
 > **See your AI team work. Trust that it finished.** — A multi-agent orchestration canvas and delivery-verification plugin for DeepSeek Harness.
 
 [中文](README.md) · English
