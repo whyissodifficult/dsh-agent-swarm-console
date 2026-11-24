@@ -314,3 +314,66 @@ test('环境不可用 + 真实失败并存 → 仍判 RED（真实失败优先�
   ] }))
   assert.equal(d.decision, 'RED', d.decision)
 })
+
+test('0.6.0 持久化：写盘后重新打开能读到契约与判定', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { openPersistentStores } = await import('../lib/core/store.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-state-'))
+  const file = path.join(dir, 'state.json')
+
+  // 第一个进程：冻结 → 确认 → 跑检查
+  const a = openPersistentStores(file)
+  const { contractId } = verifyContract({
+    objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }],
+  }, 'default', a.contracts, a.runs)
+  gateFreeze({ contractId, confirm: true }, a.contracts, a.runs)
+  await verifyRun({ contractId, evidenceInput: { checks: [{ id: 'k1', type: 'file.exists', path: 'package.json' }] } }, a.contracts, a.runs)
+  a.close()
+  assert.equal(fs.existsSync(file), true, '状态文件应已写出')
+
+  // 第二个进程：只打开文件，不重跑任何东西
+  const b = openPersistentStores(file)
+  const st = verifyStatus({ contractId }, b.runs)
+  assert.equal(st.known, true, '重启后契约状态应可读')
+  assert.equal(st.confirmed, true)
+  assert.ok(st.decision, '重启后应有最近决定')
+  assert.ok(st.evidenceHash, '重启后应保留证据 hash')
+  const status = gateStatus({ contractId }, b.contracts, b.runs)
+  assert.equal(status.kind, 'success', JSON.stringify(status).slice(0, 120))
+  b.close()
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('0.6.0 持久化：状态文件损坏 → 空状态启动且不抛', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { openPersistentStores } = await import('../lib/core/store.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-bad-'))
+  const file = path.join(dir, 'state.json')
+  fs.writeFileSync(file, '{ 这不是 JSON', 'utf8')
+  const s = openPersistentStores(file)
+  assert.equal(s.contracts.size, 0)
+  assert.match(s.warnings.join(' '), /读取失败/, s.warnings.join(' '))
+  s.close()
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('0.6.0 持久化：超过上限按最旧淘汰', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { openPersistentStores } = await import('../lib/core/store.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cap-'))
+  const file = path.join(dir, 'state.json')
+  const s = openPersistentStores(file)
+  for (let i = 0; i < 620; i++) s.contracts.set('k' + i, { i })
+  assert.equal(s.contracts.size, 500, '应裁到 500 条')
+  assert.equal(s.contracts.has('k0'), false, '最旧的应被淘汰')
+  assert.equal(s.contracts.has('k619'), true, '最新的应保留')
+  s.close()
+  fs.rmSync(dir, { recursive: true, force: true })
+})

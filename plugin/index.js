@@ -8,17 +8,24 @@
  * 编排/多 agent 不是本插件的职责，本插件只负责验收。
  */
 import { z } from './lib/core/mini-schema.js'
+import { openPersistentStores, defaultStateFile } from './lib/core/store.js'
 import { verifyContract, verifyRun, verifyStatus, guardCaller, gateApprove, gateRetry, gateStatus, gateFreeze } from './lib/core/verify.js'
 
 export const inject = ['tools']
 
-export function apply(ctx) {
-  registerVerifyTools(ctx)
-  registerGateCommands(ctx)
+export function apply(ctx, config) {
+  // 0.6.0：契约与运行状态落盘，重启不丢；配置 stateFile 可改路径，传 "" 则只存内存
+  const stateFile = config?.stateFile === undefined ? defaultStateFile() : String(config.stateFile)
+  const store = openPersistentStores(stateFile)
+  for (const w of store.warnings) ctx.logger?.warn?.(`[swarm-console] ${w}`)
+  ctx.effect(() => () => store.close())
+
+  registerVerifyTools(ctx, store)
+  registerGateCommands(ctx, store)
   // 卡片与 skill 是可选增强（仅在挂载 action-cards 的 profile 生效）；v1 默认入口是斜杠命令。
   // 两者都各自降级，任一失败都不阻塞 verify_* 三工具与斜杠命令。
   registerGateSkill(ctx)
-  registerGateCard(ctx)
+  registerGateCard(ctx, store)
 }
 
 /**
@@ -32,7 +39,7 @@ function sessionOf(invocation) {
   return typeof id === 'string' && id !== '' ? id : 'default'
 }
 
-function registerGateCommands(ctx) {
+function registerGateCommands(ctx, store) {
   if (typeof ctx.inject !== 'function') return
   ctx.inject(['commands'], (ctx) => {
     const commands = ctx.commands
@@ -50,7 +57,7 @@ function registerGateCommands(ctx) {
             contractId: parts[0] ?? '',
             sessionId: sessionOf({ agent }),
             expectedHash: parts[1],
-          })
+          }, store.contracts, store.runs)
         },
       },
       {
@@ -61,20 +68,20 @@ function registerGateCommands(ctx) {
           const raw = String(rawInput ?? '').trim()
           const confirm = /(^|\s)--yes\s*$/.test(raw)
           const contractId = raw.replace(/\s*--yes\s*$/, '').trim()
-          return gateFreeze({ contractId, sessionId: sessionOf({ agent }), confirm })
+          return gateFreeze({ contractId, sessionId: sessionOf({ agent }), confirm }, store.contracts, store.runs)
         },
       },
       {
         name: 'gate-retry',
         description: '重跑某契约的门禁校验并刷新决定',
         input: { hint: '<contractId>' },
-        handler: async ({ agent, rawInput }) => await gateRetry({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
+        handler: async ({ agent, rawInput }) => await gateRetry({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }, store.contracts, store.runs),
       },
       {
         name: 'gate-status',
         description: '查看门禁状态：不带参数列出本会话所有契约，带参数看单条（支持 id 前缀）',
         input: { hint: '[<contractId|前缀>]' },
-        handler: ({ agent, rawInput }) => gateStatus({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }),
+        handler: ({ agent, rawInput }) => gateStatus({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }, store.contracts, store.runs),
       },
     ]
     for (const def of defs) ctx.effect(() => commands.register(def))
@@ -128,7 +135,7 @@ function registerGateSkill(ctx) {
 }
 
 /** D5 · 三个 verify 工具。核心逻辑在 lib/core/verify.js，这里只做薄封装。 */
-function registerVerifyTools(ctx) {
+function registerVerifyTools(ctx, store) {
   const defs = [
     {
       name: 'verify_contract',
@@ -161,7 +168,7 @@ function registerVerifyTools(ctx) {
         schema: { type: 'object', properties: { contractId: { type: 'string' }, pending: { type: 'boolean' }, hint: { type: 'string' } }, required: ['contractId'] },
         render: (args, v) => [{ type: 'text', text: `contract ${v.contractId} 已冻结（待确认）\n${v.hint ?? `等待用户确认：/gate-freeze ${v.contractId}`}` }],
       },
-      execute: async (args, exec) => verifyContract(args, sessionOf(exec)),
+      execute: async (args, exec) => verifyContract(args, sessionOf(exec), store.contracts, store.runs),
     },
     {
       name: 'verify_run',
@@ -203,7 +210,7 @@ function registerVerifyTools(ctx) {
         const diffEvidence = typeof wc.summary === 'string' ? wc.summary : (typeof wc.diff === 'string' ? wc.diff : undefined)
         const evidenceInput = args.checks ? { checks: args.checks, diff: diffEvidence } : undefined
         // 0.2.0 P0-3：未显式给 checks 时按 code-change 策略生成检查请求
-        return await verifyRun({ contractId: args.contractId, sessionId: sessionOf(exec), evidenceInput, usePolicy: !evidenceInput })
+        return await verifyRun({ contractId: args.contractId, sessionId: sessionOf(exec), evidenceInput, usePolicy: !evidenceInput }, store.contracts, store.runs)
       },
     },
     {
@@ -248,7 +255,7 @@ function registerVerifyTools(ctx) {
           return [{ type: 'text', text: lines.join('\n') }]
         },
       },
-      execute: async (args, exec) => verifyStatus({ contractId: args.contractId, sessionId: sessionOf(exec) }),
+      execute: async (args, exec) => verifyStatus({ contractId: args.contractId, sessionId: sessionOf(exec) }, store.runs),
     },
   ]
   for (const def of defs) ctx.effect(() => ctx.tools.register(def))
@@ -259,7 +266,7 @@ function registerVerifyTools(ctx) {
  * 用 ctx.get('actionCards') 可选获取 —— 宿主未装 action-cards 服务时跳过（不阻塞门禁工具）。
  * details 用零依赖 mini-schema 满足 safeParse 鸭子类型。
  */
-function registerGateCard(ctx) {
+function registerGateCard(ctx, store) {
   // 仅在挂载 action-cards 的 profile 生效；v1 默认放行入口是斜杠命令（见 registerGateCommands）。
   // 可选服务走 inject：actionCards 来自另一层 bundle，晚于本插件挂载，apply 时 get 取不到。
   if (typeof ctx.inject !== 'function') return
@@ -297,7 +304,7 @@ function registerGateCard(ctx) {
           return { status: 'settled', decision: d }
         }
         if (verb === 'retry') {
-          const r = await verifyRun({ contractId, sessionId: sessionOf({ agent }), evidenceInput: payload?.evidence })
+          const r = await verifyRun({ contractId, sessionId: sessionOf({ agent }), evidenceInput: payload?.evidence }, store.contracts, store.runs)
           const d = {
             callId: proposal.callId, action: proposal.action, phase: 'proposed',
             data: { contractId, decision: r.decision, reasons: r.reasons, ...(r.reproCmd ? { reproCmd: r.reproCmd } : {}) },
