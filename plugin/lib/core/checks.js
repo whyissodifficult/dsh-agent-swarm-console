@@ -11,7 +11,12 @@
  */
 import { existsSync as fsExistsSync, realpathSync as fsRealpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
+
+/** 路径是否真的在 root 之外：`..` 整体、或 `..` + 分隔符开头；光以 ".." 开头的合法文件名（如 `..foo`）不算越界。 */
+function isOutside(rel) {
+  return rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)
+}
 
 const EXEC_TIMEOUT_MS = 10000
 
@@ -86,7 +91,7 @@ export async function runChecks(requests, deps = {}) {
       const absPath = resolve(workspaceRoot, req.path)
       // P0-A：必须留在 workspaceRoot 内，`../` 不得越界
       const rel = relative(workspaceRoot, absPath)
-      if (rel.startsWith('..') || isAbsolute(rel)) {
+      if (isOutside(rel)) {
         checks.push({ id, type, ok: false, path: req.path, absPath, detail: `检查路径越出 workspaceRoot：${req.path}` }); continue
       }
       // P0-B：符号链接 / junction 挡不住词法校验——realpath 之后再比一次
@@ -95,7 +100,7 @@ export async function runChecks(requests, deps = {}) {
       try { realRoot = realpathSync(workspaceRoot) } catch { /* workspaceRoot 不可解析时按词法处理 */ }
       try { realPath = realpathSync(absPath) } catch { /* 路径不存在或链接断开：保持词法路径 */ }
       const relReal = relative(realRoot, realPath)
-      if (relReal.startsWith('..') || isAbsolute(relReal)) {
+      if (isOutside(relReal)) {
         checks.push({ id, type, ok: false, path: req.path, absPath, detail: `检查路径经符号链接解析后越出 workspaceRoot：${req.path}` }); continue
       }
       const ok = existsSync(absPath) === true

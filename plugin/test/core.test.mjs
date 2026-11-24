@@ -377,3 +377,68 @@ test('0.6.0 持久化：超过上限按最旧淘汰', async () => {
   s.close()
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('0.6.1: 以 .. 开头的合法文件名不被误判越界（真 bug 回归）', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dotdot-'))
+  fs.writeFileSync(path.join(root, '..foo'), 'x')
+  fs.mkdirSync(path.join(root, '..dir'))
+  fs.writeFileSync(path.join(root, '..dir', 'inside.txt'), 'x')
+
+  const { checks } = await checksModule.runChecks(
+    [{ id: 'k1', type: 'file.exists', path: '..foo' },
+     { id: 'k2', type: 'file.exists', path: '..dir/inside.txt' }],
+    { workspaceRoot: root })
+  assert.equal(checks[0].ok, true, JSON.stringify(checks[0]))
+  assert.equal(checks[1].ok, true, JSON.stringify(checks[1]))
+
+  // 真越界仍然要拦
+  const out = await checksModule.runChecks(
+    [{ id: 'k3', type: 'file.exists', path: '../escape.txt' }], { workspaceRoot: root })
+  assert.equal(out.checks[0].ok, false, JSON.stringify(out.checks[0]))
+  assert.match(out.checks[0].detail, /越出 workspaceRoot/)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('0.6.1: 淘汰时保护已确认/已放行记录，删最旧的非关键记录', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { openPersistentStores } = await import('../lib/core/store.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-lru-'))
+  const s = openPersistentStores(path.join(dir, 'state.json'))
+
+  // 最旧的一条是「已放行」，必须活下来
+  s.runs.set('old:approved', { approved: true, confirmed: true, decision: 'GREEN' })
+  s.runs.set('old:plain', { decision: 'YELLOW' })
+  for (let i = 0; i < 600; i++) s.runs.set('k' + i, { decision: 'YELLOW' })
+
+  assert.equal(s.runs.size <= 501, true, '应控制在 500 附近，实际 ' + s.runs.size)
+  assert.equal(s.runs.has('old:approved'), true, '已放行的旧记录不能被淘汰')
+  assert.equal(s.runs.has('old:plain'), false, '最旧的非关键记录应被淘汰')
+  s.close()
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('0.6.1: 重复 set 会刷新顺序（LRU 而非纯插入序）', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { openPersistentStores } = await import('../lib/core/store.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-lru2-'))
+  const s = openPersistentStores(path.join(dir, 'state.json'))
+
+  s.contracts.set('a', { v: 1 })
+  s.contracts.set('b', { v: 1 })
+  for (let i = 0; i < 495; i++) s.contracts.set('o' + i, { v: 1 })   // 到 497
+  s.contracts.set('a', { v: 2 })                                      // touch a → 排到最后
+  for (let i = 0; i < 10; i++) s.contracts.set('x' + i, { v: 1 })     // 507 → 裁到 500
+
+  assert.equal(s.contracts.size, 500, '应裁到 500，实际 ' + s.contracts.size)
+  assert.equal(s.contracts.has('a'), true, '刚写过的 a 不应被淘汰')
+  assert.equal(s.contracts.has('b'), false, 'b 更旧，应被淘汰')
+  s.close()
+  fs.rmSync(dir, { recursive: true, force: true })
+})

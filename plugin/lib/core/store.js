@@ -56,7 +56,7 @@ export function openPersistentStores(filePath, opts = {}) {
       }, null, 2)
       const tmp = `${filePath}.tmp`
       writeFileSync(tmp, payload, 'utf8')
-      renameSync(tmp, filePath)
+      renameWithRetry(tmp, filePath)
     } catch (error) {
       warnings.push(`状态写入失败：${error?.message ?? error}`)
     }
@@ -102,7 +102,14 @@ function tracked(map, onChange) {
     values: () => map.values(),
     entries: () => map.entries(),
     get size() { return map.size },
-    set: (k, v) => { map.set(k, v); trim(map); onChange(); return api },
+    set: (k, v) => {
+      // 已存在则先删后插：让 Map 的插入序等于最近使用序（LRU）
+      if (map.has(k)) map.delete(k)
+      map.set(k, v)
+      trim(map)
+      onChange()
+      return api
+    },
     delete: (k) => { const ok = map.delete(k); if (ok) onChange(); return ok },
     clear: () => { map.clear(); onChange() },
     [Symbol.iterator]: () => map[Symbol.iterator](),
@@ -110,12 +117,38 @@ function tracked(map, onChange) {
   return api
 }
 
+/**
+ * 淘汰：优先删最旧的非关键记录。
+ * 已确认（confirmed）或已放行（approved）的记录不参与淘汰——
+ * 让“签过字的证据”被静默丢掉，比涨一点文件体积糟得多。
+ */
 function trim(map) {
-  while (map.size > MAX_ENTRIES) {
-    const oldest = map.keys().next()
-    if (oldest.done) break
-    map.delete(oldest.value)
+  if (map.size <= MAX_ENTRIES) return
+  for (const k of [...map.keys()]) {
+    if (map.size <= MAX_ENTRIES) break
+    const v = map.get(k)
+    if (v && (v.confirmed === true || v.approved === true)) continue
+    map.delete(k)
   }
+}
+
+/** rename 在 Windows 上可能被索引/杀软短暂占用（EBUSY/EPERM）：重试几次再放弃。 */
+function renameWithRetry(from, to, attempts = 3) {
+  let lastError
+  for (let i = 0; i < attempts; i++) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (error) {
+      lastError = error
+      const code = error?.code
+      if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'EACCES') break
+      // 同步等待 30ms（Node 同步 API 没有 sleep，用忙等换取确定性）
+      const until = Date.now() + 30
+      while (Date.now() < until) { /* spin */ }
+    }
+  }
+  throw lastError
 }
 
 function dump(map) {
