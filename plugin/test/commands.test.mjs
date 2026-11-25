@@ -47,11 +47,11 @@ function mk(s, decision = 'GREEN', sessionId = 'default', objective = '命令测
   return { id: contractId, hash }
 }
 
-test('注册 4 条命令且 kebab-case', async () => {
+test('注册 5 条命令且 kebab-case', async () => {
   const registered = new Map()
   const commands = { register: (d) => { registered.set(d.name, d); return () => {} } }
   apply(fakeCtx({ commands }).ctx, cfg)
-  assert.deepEqual([...registered.keys()].sort(), ['gate-approve', 'gate-freeze', 'gate-retry', 'gate-status'])
+  assert.deepEqual([...registered.keys()].sort(), ['gate-approve', 'gate-freeze', 'gate-history', 'gate-retry', 'gate-status'])
   for (const d of registered.values()) {
     assert.match(d.name, /^[a-z][a-z0-9-]*$/)
     assert.equal(typeof d.handler, 'function')

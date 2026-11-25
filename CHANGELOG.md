@@ -1,5 +1,17 @@
 # 更新日志
 
+## 0.8.0 · 契约模板 + /gate-history
+
+- **契约模板**：`verify_contract` 支持 `template`，把常见验收条件一次展开——
+  `readme-install`（README + 安装节）、`tests-green`（跑 testCmd）、`tests-present`（有测试文件）、
+  `package-version:<x>`（package.json 版本等于）。模板与显式 `criteria` **二选一**，同时给会报错。
+  模板只是省打字：展开后的条件仍全文回显，用户仍要 `--yes`。
+- **`verify_run` 可用契约里的建议检查**：不传 `checks` 时自动用模板产出的检查（0.7.0 的 6 种类型都能用）。
+- **`/gate-history [n]`**：列出已落盘的契约（跨会话、按最后活动时间倒序，最多 50 条）。
+- 测试：+5（模板展开、缺 testCmd 报错、未知模板报错、template/criteria 互斥、history 排序），共 104 条；两处修复各带反证
+- 修：`suggestedChecks` 注入点原本在「无检查请求」早退之后，导致模板契约永远判 YELLOW；已移到早退之前
+
+
 ## 0.7.0 · 检查类型从 2 种扩到 6 种
 
 为什么：只有 `file.exists` 和 `exec` 时，很多真实验收条件写不出来——

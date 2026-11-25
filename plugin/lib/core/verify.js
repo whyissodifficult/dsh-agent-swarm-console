@@ -12,6 +12,7 @@ import { makeEvidence, evidenceHash } from './evidence.js'
 import { decide } from './gate.js'
 import { runChecks } from './checks.js'
 import { loadPolicy, policyToChecks, policyCheckIds } from './policy.js'
+import { expandTemplate } from './templates.js'
 
 const contracts = new Map()
 const runs = new Map()
@@ -42,7 +43,24 @@ function splitKey(key) {
 
 /** verify_contract：冻结契约（按会话存），进入待确认状态。 */
 export function verifyContract(input, sessionId = 'default', store = contracts, runStore = runs) {
-  const c = freezeContract(input)
+  // 0.8.0：模板展开（template 与显式 criteria 二选一；同时给会报错）
+  let prepared = input
+  if (input && typeof input === 'object' && typeof input.template === 'string' && input.template !== '') {
+    if (Array.isArray(input.criteria) && input.criteria.length > 0) {
+      throw new Error('template 与 criteria 只能二选一：模板已自带验收条件')
+    }
+    let expanded
+    try {
+      expanded = expandTemplate(input.template, { testCmd: input.testCmd })
+    } catch (error) {
+      throw new Error(String(error?.message ?? error))
+    }
+    prepared = { ...input, criteria: expanded.criteria, suggestedChecks: expanded.suggestedChecks }
+  }
+  const c = freezeContract(prepared)
+  if (Array.isArray(prepared.suggestedChecks) && prepared.suggestedChecks.length > 0) {
+    c.suggestedChecks = prepared.suggestedChecks
+  }
   store.set(contractKey(c.id, sessionId), { contract: c, frozenAt: c.frozenAt })
   const rk = runKey(c.id, sessionId)
   // 0.4.0：确认是状态不是内容——同一契约重复冻结不重置已确认
@@ -147,6 +165,11 @@ export async function verifyRun({ contractId, sessionId = 'default', evidenceInp
     }
   }
 
+  // 0.8.0：契约带 suggestedChecks（来自模板）时，调用方不传 checks 也能跑
+  if (!evidenceInput && Array.isArray(contract.suggestedChecks) && contract.suggestedChecks.length > 0) {
+    evidenceInput = { checks: contract.suggestedChecks }
+  }
+
   // H1：没有检查请求 → 不伪造证据
   if (!evidenceInput && typeof runPolicy !== 'function') {
     const d = decide(contract, { checks: [], artifacts: [] })
@@ -228,6 +251,41 @@ export function guardCaller(agent, record) {
     return { status: 'refused', reason }
   }
   return null
+}
+
+/**
+ * 0.8.0 · /gate-history：列出已落盘的契约（跨会话），按最后活动时间倒序。
+ * 只读；不改变任何状态。
+ */
+export function gateHistory({ limit = 10, sessionId } = {}, store = contracts, runStore = runs) {
+  const rows = []
+  for (const [k, entry] of store) {
+    const [sid, ...rest] = String(k).split(':')
+    const id = rest.join(':')
+    if (sessionId && sid !== sessionId) continue
+    const r = runStore.get(runKey(id, sid)) ?? {}
+    const c = entry?.contract ?? {}
+    rows.push({
+      id, sessionId: sid,
+      objective: String(c.objective ?? '').slice(0, 40),
+      confirmed: r.confirmed === true,
+      decision: r.decision,
+      approved: r.approved === true,
+      lastAt: r.at ?? r.approvedAt ?? r.confirmedAt ?? c.frozenAt ?? '',
+    })
+  }
+  rows.sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)))
+  const top = rows.slice(0, Math.max(1, Math.min(50, Number(limit) || 10)))
+  if (top.length === 0) return { kind: 'success', text: '还没有任何契约记录' }
+  const lines = top.map((x, i) => {
+    const state = x.approved ? '已放行' : x.decision ? x.decision : x.confirmed ? '已确认待校验' : '待确认'
+    const at = String(x.lastAt).replace('T', ' ').slice(0, 19)
+    return `${i + 1}. ${x.id}  ${state}  ${at}  ${x.objective}${x.sessionId && x.sessionId !== 'default' ? `  [会话 ${String(x.sessionId).slice(-6)}]` : ''}`
+  })
+  return {
+    kind: 'success',
+    text: [`最近 ${top.length} 条契约（共 ${rows.length} 条，落盘在 state.json）：`, ...lines].join('\n'),
+  }
 }
 
 /** 供测试隔离用的空 store。 */

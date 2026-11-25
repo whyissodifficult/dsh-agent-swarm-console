@@ -9,7 +9,7 @@ import { freezeContract, validateContract } from '../lib/core/contract.js'
 import { makeEvidence, validateEvidence, evidenceHash } from '../lib/core/evidence.js'
 import { decide } from '../lib/core/gate.js'
 import * as checksModule from '../lib/core/checks.js'
-import { verifyContract, verifyRun, verifyStatus, newStores, gateFreeze, gateStatus } from '../lib/core/verify.js'
+import { verifyContract, verifyRun, verifyStatus, newStores, gateFreeze, gateStatus, gateHistory } from '../lib/core/verify.js'
 import { z } from '../lib/core/mini-schema.js'
 
 const ROOT = process.cwd()
@@ -550,4 +550,50 @@ test('0.7.0 新检查：RED 时复现命令可执行（非装饰）', async () =
   assert.equal(d.decision, 'RED')
   assert.match(d.reproCmd, /node -e/, d.reproCmd)
   assert.ok(!d.reproCmd.includes('无可执行复现命令'), d.reproCmd)
+})
+
+test('0.8.0 模板：readme-install 展开成 2 条条件且自带检查', async () => {
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: 'README 有安装节', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    template: 'readme-install',
+  }, 'default', s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true }, s.contracts, s.runs)
+  const r = await verifyRun({ contractId }, s.contracts, s.runs)
+  assert.ok(['GREEN', 'RED'].includes(r.decision), r.decision)
+  assert.ok(r.evidenceHash, '应有证据')
+})
+
+test('0.8.0 模板：tests-green 需要 testCmd，缺了直接报错', async () => {
+  const s = newStores()
+  assert.throws(() => verifyContract({
+    objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'), template: 'tests-green',
+  }, 'default', s.contracts, s.runs), /需要先声明 testCmd/)
+})
+
+test('0.8.0 模板：未知模板报错并列出可用模板', () => {
+  const s = newStores()
+  assert.throws(() => verifyContract({
+    objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'), template: 'nope',
+  }, 'default', s.contracts, s.runs), /未知模板.*readme-install/)
+})
+
+test('0.8.0 模板：template 与 criteria 同时给 → 报错', () => {
+  const s = newStores()
+  assert.throws(() => verifyContract({
+    objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    template: 'readme-install', criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }],
+  }, 'default', s.contracts, s.runs), /二选一/)
+})
+
+test('0.8.0 /gate-history：列出落盘契约并按时间倒序', async () => {
+  const s = newStores()
+  const root = process.cwd().replace(/\\\\/g, '/')
+  const a = verifyContract({ objective: '第一个', workspaceRoot: root, template: 'readme-install' }, 'default', s.contracts, s.runs)
+  const b = verifyContract({ objective: '第二个', workspaceRoot: root, template: 'readme-install' }, 'default', s.contracts, s.runs)
+  gateFreeze({ contractId: b.contractId, confirm: true }, s.contracts, s.runs)
+  const h = gateHistory({}, s.contracts, s.runs)
+  assert.equal(h.kind, 'success')
+  assert.ok(h.text.includes(a.contractId) && h.text.includes(b.contractId), h.text)
+  assert.match(h.text, /已确认待校验|GREEN|RED/, h.text)
 })

@@ -9,7 +9,7 @@
  */
 import { z } from './lib/core/mini-schema.js'
 import { openPersistentStores, defaultStateFile } from './lib/core/store.js'
-import { verifyContract, verifyRun, verifyStatus, guardCaller, gateApprove, gateRetry, gateStatus, gateFreeze } from './lib/core/verify.js'
+import { verifyContract, verifyRun, verifyStatus, guardCaller, gateApprove, gateRetry, gateStatus, gateFreeze, gateHistory } from './lib/core/verify.js'
 
 export const inject = ['tools']
 
@@ -76,6 +76,15 @@ function registerGateCommands(ctx, store) {
         description: '重跑某契约的门禁校验并刷新决定',
         input: { hint: '<contractId>' },
         handler: async ({ agent, rawInput }) => await gateRetry({ contractId: String(rawInput ?? '').trim(), sessionId: sessionOf({ agent }) }, store.contracts, store.runs),
+      },
+      {
+        name: 'gate-history',
+        description: '列出已落盘的契约（跨会话，按最后活动时间倒序，最多 50 条）',
+        input: { hint: '[条数]' },
+        handler: ({ agent, rawInput }) => gateHistory({
+          limit: Number(String(rawInput ?? '').trim()) || 10,
+          sessionId: sessionOf({ agent }),
+        }, store.contracts, store.runs),
       },
       {
         name: 'gate-status',
@@ -147,6 +156,8 @@ function registerVerifyTools(ctx, store) {
           workspaceRoot: { type: 'string', description: '检查的根目录（绝对路径，必须存在）' },
           testCmd: { type: 'string', description: 'exec 检查唯一允许的命令（白名单）；不填则拒绝一切 exec' },
           policyId: { type: 'string', description: '显式声明才启用策略（如 code-change）' },
+          template: { type: 'string', description: '契约模板：readme-install / tests-green / tests-present / package-version:<x>'
+            + '（模板与 criteria 二选一；模板自带建议检查，verify_run 不传 checks 时用它）' },
           constraints: { type: 'array', items: { type: 'string' } },
           criteria: {
             type: 'array',
