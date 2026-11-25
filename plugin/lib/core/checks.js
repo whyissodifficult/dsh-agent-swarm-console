@@ -12,6 +12,7 @@
 import { existsSync as fsExistsSync, realpathSync as fsRealpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { runFsCheck } from './checks-extra.js'
 
 /** 路径是否真的在 root 之外：`..` 整体、或 `..` + 分隔符开头；光以 ".." 开头的合法文件名（如 `..foo`）不算越界。 */
 function isOutside(rel) {
@@ -106,6 +107,12 @@ export async function runChecks(requests, deps = {}) {
       const ok = existsSync(absPath) === true
       checks.push({ id, type, ok, path: req.path, absPath, detail: ok ? `文件存在：${req.path}` : `文件不存在：${req.path}` })
       continue
+    }
+
+    // 0.7.0 扩展类型：glob.exists / text.contains / json.field / file.sha256
+    if (type === 'glob.exists' || type === 'text.contains' || type === 'json.field' || type === 'file.sha256') {
+      const out = runFsCheck(req, workspaceRoot, { realpathSync })
+      if (out) { checks.push({ id, type, ...out }); continue }
     }
 
     if (type === 'exec') {

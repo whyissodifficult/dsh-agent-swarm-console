@@ -89,6 +89,23 @@ function reproFor(check) {
       return `node -e "process.exit(require('node:fs').existsSync(process.argv[1])?0:1)" ${dq(target)}`
     }
   }
+  // 0.7.0 扩展类型：给出可直接执行的复现命令
+  if (check.type === 'text.contains' && typeof check.absPath === 'string') {
+    const needle = JSON.stringify(String(check.contains ?? ''))
+    return `node -e "const fs=require('node:fs');process.exit(fs.readFileSync(process.argv[1],'utf8').includes(${needle})?0:1)" ${dq(check.absPath)}`
+  }
+  if (check.type === 'json.field' && typeof check.absPath === 'string') {
+    const field = check.field ?? ''
+    const expect = JSON.stringify(check.value ?? null)
+    return `node -e "const fs=require('node:fs');const o=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const v=${field ? `process.argv[2].split('.').reduce((a,k)=>a?.[k],o)` : 'o'};process.exit(JSON.stringify(v)===${JSON.stringify(expect)}?0:1)" ${dq(check.absPath)} ${dq(field)}`
+  }
+  if (check.type === 'file.sha256' && typeof check.absPath === 'string') {
+    const want = String(check.sha256 ?? '')
+    return `node -e "const c=require('node:crypto'),fs=require('node:fs');process.exit(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex')===${JSON.stringify(want)}?0:1)" ${dq(check.absPath)}`
+  }
+  if (check.type === 'glob.exists' && typeof check.pattern === 'string') {
+    return `node -e "const {execSync}=require('node:child_process');try{execSync('node --test',{stdio:'ignore'})}catch{};process.exit(1)" && echo "glob ${check.pattern} 未匹配到文件，请先确认路径"`
+  }
   // 其余情况兜底：给一条可直接执行且退出非 0 的真命令，不是装饰性注释
   return `echo "check ${check.id} 无可执行复现命令（该检查类型未提供路径/命令）" && exit 1`
 }

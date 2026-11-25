@@ -177,7 +177,9 @@ function registerVerifyTools(ctx, store) {
         type: 'object',
         properties: {
           contractId: { type: 'string' },
-          checks: { type: 'array', items: { type: 'object' } },
+          checks: { type: 'array', items: { type: 'object' },
+            description: '检查请求。类型：file.exists{path} / glob.exists{pattern} / text.contains{path,text} / '
+              + 'json.field{path,field,equals?} / file.sha256{path,sha256} / exec{cmd=契约 testCmd}' },
         },
         required: ['contractId'],
         additionalProperties: false,

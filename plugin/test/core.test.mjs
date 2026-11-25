@@ -446,3 +446,108 @@ test('0.6.1: 重复 set 会刷新顺序（LRU 而非纯插入序）', async () =
   s.close()
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('0.7.0 新检查：glob.exists 命中 / 落空', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'glob-'))
+  fs.mkdirSync(path.join(root, 'src'))
+  fs.writeFileSync(path.join(root, 'src', 'a.test.mjs'), 'x')
+  fs.writeFileSync(path.join(root, 'src', 'b.js'), 'x')
+
+  const hit = await checksModule.runChecks(
+    [{ id: 'k1', type: 'glob.exists', pattern: 'src/**/*.test.mjs' }], { workspaceRoot: root })
+  assert.equal(hit.checks[0].ok, true, JSON.stringify(hit.checks[0]))
+  assert.equal(hit.checks[0].matches.length, 1)
+
+  const miss = await checksModule.runChecks(
+    [{ id: 'k2', type: 'glob.exists', pattern: 'src/**/*.py' }], { workspaceRoot: root })
+  assert.equal(miss.checks[0].ok, false)
+
+  const escape = await checksModule.runChecks(
+    [{ id: 'k3', type: 'glob.exists', pattern: '../*.js' }], { workspaceRoot: root })
+  assert.equal(escape.checks[0].ok, false)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('0.7.0 新检查：text.contains 命中 / 落空 / 越界', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'text-'))
+  fs.writeFileSync(path.join(root, 'README.md'), '# hi\n安装说明\n')
+
+  const hit = await checksModule.runChecks(
+    [{ id: 'k1', type: 'text.contains', path: 'README.md', text: '安装说明' }], { workspaceRoot: root })
+  assert.equal(hit.checks[0].ok, true, JSON.stringify(hit.checks[0]))
+
+  const miss = await checksModule.runChecks(
+    [{ id: 'k2', type: 'text.contains', path: 'README.md', text: '不存在的词' }], { workspaceRoot: root })
+  assert.equal(miss.checks[0].ok, false)
+
+  const escape = await checksModule.runChecks(
+    [{ id: 'k3', type: 'text.contains', path: '../x', text: 'a' }], { workspaceRoot: root })
+  assert.equal(escape.checks[0].ok, false)
+  assert.match(escape.checks[0].detail, /越出 workspaceRoot/)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('0.7.0 新检查：json.field 取值 / 等值断言 / 缺字段', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'json-'))
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'x', version: '1.2.3', deps: { a: 1 } }))
+
+  const get = await checksModule.runChecks(
+    [{ id: 'k1', type: 'json.field', path: 'package.json', field: 'version', equals: '1.2.3' }], { workspaceRoot: root })
+  assert.equal(get.checks[0].ok, true, JSON.stringify(get.checks[0]))
+  assert.equal(get.checks[0].value, '1.2.3')
+
+  const nested = await checksModule.runChecks(
+    [{ id: 'k2', type: 'json.field', path: 'package.json', field: 'deps.a', equals: 1 }], { workspaceRoot: root })
+  assert.equal(nested.checks[0].ok, true)
+
+  const wrong = await checksModule.runChecks(
+    [{ id: 'k3', type: 'json.field', path: 'package.json', field: 'version', equals: '9.9.9' }], { workspaceRoot: root })
+  assert.equal(wrong.checks[0].ok, false)
+
+  const absent = await checksModule.runChecks(
+    [{ id: 'k4', type: 'json.field', path: 'package.json', field: 'nope.deep' }], { workspaceRoot: root })
+  assert.equal(absent.checks[0].ok, false)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('0.7.0 新检查：file.sha256 一致 / 不一致', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const crypto = await import('node:crypto')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sha-'))
+  const file = path.join(root, 'a.txt')
+  fs.writeFileSync(file, 'hello')
+  const digest = crypto.createHash('sha256').update('hello').digest('hex')
+
+  const ok = await checksModule.runChecks(
+    [{ id: 'k1', type: 'file.sha256', path: 'a.txt', sha256: digest }], { workspaceRoot: root })
+  assert.equal(ok.checks[0].ok, true, JSON.stringify(ok.checks[0]))
+
+  const bad = await checksModule.runChecks(
+    [{ id: 'k2', type: 'file.sha256', path: 'a.txt', sha256: '0'.repeat(64) }], { workspaceRoot: root })
+  assert.equal(bad.checks[0].ok, false)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('0.7.0 新检查：RED 时复现命令可执行（非装饰）', async () => {
+  const { decide } = await import('../lib/core/gate.js')
+  const { makeEvidence } = await import('../lib/core/evidence.js')
+  const c = freezeContract({ objective: 'x', workspaceRoot: process.cwd().replace(/\\\\/g, '/'),
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] })
+  const checks = [{ id: 'k1', type: 'text.contains', ok: false, path: 'README.md',
+    absPath: process.cwd().replace(/\\\\/g, '/') + '/README.md', contains: '绝不存在的词' }]
+  const d = decide(c, makeEvidence({ contractId: c.id, checks }))
+  assert.equal(d.decision, 'RED')
+  assert.match(d.reproCmd, /node -e/, d.reproCmd)
+  assert.ok(!d.reproCmd.includes('无可执行复现命令'), d.reproCmd)
+})

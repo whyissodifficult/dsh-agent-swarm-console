@@ -1,6 +1,6 @@
 {
   "name": "dsh-swarm-console",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "type": "module",
   "description": "Delivery gate for DeepSeek Harness where *you* sign off: the user confirms the contract, the plugin executes the evidence, only the user can approve.",
   "keywords": [

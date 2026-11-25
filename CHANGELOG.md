@@ -1,5 +1,26 @@
 # 更新日志
 
+## 0.7.0 · 检查类型从 2 种扩到 6 种
+
+为什么：只有 `file.exists` 和 `exec` 时，很多真实验收条件写不出来——
+「README 里必须有安装节」「package.json 的 version 必须是 1.2.3」「这个文件不能变」都只能用 `exec` 拼 `node -e`，
+既难写又难读。所以把常见断言做成一等检查类型。
+
+| 类型 | 断言 |
+| --- | --- |
+| `file.exists` | 文件存在（相对 workspaceRoot） |
+| `glob.exists` | 有文件匹配 `src/**/*.test.mjs` 这类模式 |
+| `text.contains` | 文件包含指定文本（如 README 有「## 安装」） |
+| `json.field` | JSON 的某个点分字段存在 / 等于某值（如 `version`、`deps.count`） |
+| `file.sha256` | 文件哈希等于给定值（防「悄悄改了」） |
+| `exec` | 执行契约里**唯一允许**的 testCmd |
+
+- 全部沿用同一套边界规则：相对路径、`../` 与符号链接越界判 RED
+- RED 时按类型生成**可执行**的复现命令（不再只对 file.exists 生成）
+- 测试：+5（glob 命中/落空/越界、text 命中/落空/越界、json 取值/等值/缺字段、sha256 一致/不一致、复现命令可执行），共 99 条
+- 修一个自己写出来的 bug：glob 起点目录按「最后一个 /」算会拼出含 `*` 的假路径，改为「第一个通配符之前」；有反证
+
+
 ## 0.6.3 · 定位收紧：差异是“你签字”
 
 社区里同类实现至少有三个（dsh-verification / doneos-packs / guard 插件）。既然概念不新，
