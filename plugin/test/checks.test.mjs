@@ -29,7 +29,9 @@ test('file.exists 以 workspaceRoot 解析相对路径（绝对路径入参 → 
   assert.equal(rel.checks[0].ok, true)
   assert.ok(seen.includes('a') && seen.includes('b.txt'), '应解析到 workspaceRoot 下')
 
-  const abs = await runChecks([{ id: 'f', type: 'file.exists', path: 'C:/Windows/win.ini' }], {
+  // 平台无关的绝对路径（Linux 上 'C:/...' 不是绝对路径，会走成相对路径）
+  const absPath = process.platform === 'win32' ? 'C:/Windows/win.ini' : '/etc/passwd'
+  const abs = await runChecks([{ id: 'f', type: 'file.exists', path: absPath }], {
     workspaceRoot: ROOT, existsSync: () => true,
   })
   assert.equal(abs.checks[0].ok, false)

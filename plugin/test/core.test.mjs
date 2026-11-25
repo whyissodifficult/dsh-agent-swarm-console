@@ -216,13 +216,17 @@ test('P0: 刚 freeze、还没 verify_run 时 verifyStatus 可 JSON 序列化（�
 
 test('P0-B: 符号链接/junction 指向工作区外 → RED（注入 realpath，不依赖系统权限）', async () => {
   // 用注入的 realpath 模拟「词法路径在 workspaceRoot 内、真实路径在外面」，避免 Windows 建链接权限问题
-  const root = 'C:/ws'
+  const root = process.platform === 'win32' ? 'C:/ws' : '/ws'
   const { checks } = await checksModule.runChecks(
     [{ id: 'k1', type: 'file.exists', path: 'link/secret.txt' }],
     {
       workspaceRoot: root,
       existsSync: () => true,
-      realpathSync: (p) => (p === 'C:/ws' || p === 'C:\\ws' ? 'C:/ws' : 'C:/outside/secret.txt'),
+      realpathSync: (p) => {
+        const norm = (x) => x.replace(/[\\/]/g, '/').toLowerCase()
+        if (norm(p) === norm(root)) return root
+        return process.platform === 'win32' ? 'C:/outside/secret.txt' : '/outside/secret.txt'
+      },
     })
   assert.equal(checks[0].ok, false, JSON.stringify(checks[0]))
   assert.match(checks[0].detail, /符号链接/, checks[0].detail)
