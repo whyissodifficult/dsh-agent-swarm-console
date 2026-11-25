@@ -1,0 +1,30 @@
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 编码检查（UTF-8 / GBK 误读）
+        run: node tools/check-encoding.mjs
+      - name: 单测（插件核心）
+        run: node --test plugin/test/*.test.mjs
+      - name: 插件形状冒烟
+        run: node plugin/test/smoke.mjs
+      - name: 包自包含检查
+        run: |
+          cd plugin
+          npm pack --dry-run
