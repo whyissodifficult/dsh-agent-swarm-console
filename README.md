@@ -1,18 +1,18 @@
-# DSH 交付门禁（dsh-swarm-console）
+# 别信「我完成了」 —— DSH 交付门禁
 
-> **别信"我完成了"，让证据说话** —— 一个为 DeepSeek Harness 设计的交付门禁插件：
-> 契约定清楚，证据由插件自己去查、去跑，放行只有用户能做。
+> **契约由你确认，证据由插件执行，放行只有你能做。**
+> DeepSeek Harness 插件：让 agent 的「完成了」变成可机器验证的东西。
 
-> ✅ 已发布 `dsh-swarm-console@0.5.0` · 只做门禁（0.5.0 起移除多 agent 工具）
-> 0.3 契约结构（破坏性）：`workspaceRoot` 必填、`testCmd` 白名单、`/gate-approve` 需证据 hash、工作区路径不得越界
-> 已实测：npm 安装与本地目录安装两条路径均可用；**桌面端 DSH 0.2.2-rc.5、手机端 0.2.1-rc.2 均可安装并运行**
->
-> 包名（`dsh-swarm-console`）与仓库名沿用早期「swarm 编排」实验的历史，**0.5.0 起专注交付门禁**：
-> 编排交给 DSH 原生的 `subagent` / `workflow`，验收交给这个插件。名字是旧账，功能是新的。
+```
+你    ：README 加个安装节，加完告诉我
+agent ：好的，已完成 ✅
+你打开 ：没加。
+```
 
-[English](README.en.md) · 中文
+装了本插件：`verify_run` 之后 **GREEN 才叫完成**，RED 会给你一条能直接粘贴执行的复现命令。
 
----
+- npm：`dsh-swarm-console@0.6.2` · 仓库：本页 · 实测：DSH 0.2.2-rc.5（Windows）/ 0.2.1-rc.2（Android）
+- 包页（装法与完整说明）：[plugin/README.md](plugin/README.md)
 
 ## 为什么做这个
 

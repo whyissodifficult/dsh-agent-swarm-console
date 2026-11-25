@@ -1,6 +1,6 @@
 {
   "name": "dsh-swarm-console",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "A machine-checkable delivery gate for DeepSeek Harness: contract is user-confirmed, evidence is executed by the plugin, only the user can approve.",
   "keywords": [
