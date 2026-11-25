@@ -1,4 +1,4 @@
-# 别信「我完成了」 —— DSH 交付门禁
+# 别人的门禁让 agent 自己变绿；这一道，要**你签字**
 
 > **契约由你确认，证据由插件执行，放行只有你能做。**
 > DeepSeek Harness 插件：让 agent 的「完成了」变成可机器验证的东西。
@@ -9,10 +9,11 @@ agent ：好的，已完成 ✅
 你打开 ：没加。
 ```
 
-装了本插件：`verify_run` 之后 **GREEN 才叫完成**，RED 会给你一条能直接粘贴执行的复现命令。
+`/gate-freeze <id> --yes` 确认契约（先回显全文），`/gate-approve <id> <证据hash>` 放行——**这两步模型没有工具，做不了**。
 
-- npm：`dsh-swarm-console@0.6.2` · 仓库：本页 · 实测：DSH 0.2.2-rc.5（Windows）/ 0.2.1-rc.2（Android）
-- 包页（装法与完整说明）：[plugin/README.md](plugin/README.md)
+- npm：`dsh-swarm-console@0.6.3` · 实测：DSH 0.2.2-rc.5（Windows）/ 0.2.1-rc.2（Android）
+- 包页与完整说明：[plugin/README.md](plugin/README.md)
+- 一个真案例：[plugin/docs/CASE-dotdot.md](plugin/docs/CASE-dotdot.md)
 
 ## 为什么做这个
 
