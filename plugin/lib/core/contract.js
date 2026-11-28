@@ -66,12 +66,25 @@ export function freezeContract(input) {
     }
     testTimeoutMs = Math.floor(v)
   }
+  // 0.9.0：交付物清单（相对路径）；契约哈希包含它，改清单就换 id
+  let deliverables = []
+  if (input.deliverables !== undefined && input.deliverables !== null) {
+    if (!Array.isArray(input.deliverables)) throw new Error('deliverables 必须是字符串数组')
+    for (const d of input.deliverables) {
+      if (typeof d !== 'string' || d.trim() === '') throw new Error('deliverables 里每一项都必须是非空相对路径')
+      if (isAbsolute(d)) throw new Error(`deliverables 必须是相对路径：${d}`)
+      if (d.split(/[\\/]/).includes('..')) throw new Error(`deliverables 不允许包含 ..：${d}`)
+      deliverables.push(d.trim())
+    }
+    deliverables = [...new Set(deliverables)].sort()
+  }
   const frozenAt = typeof input.frozenAt === 'string' && input.frozenAt !== '' ? input.frozenAt : new Date().toISOString()
 
-  const canonical = JSON.stringify({ objective: input.objective, constraints, criteria, workspaceRoot, testCmd, policyId, testTimeoutMs })
+  const canonical = JSON.stringify({ objective: input.objective, constraints, criteria, workspaceRoot, testCmd, policyId, testTimeoutMs, deliverables })
   const id = createHash('sha256').update(canonical).digest('hex').slice(0, 12)
 
   const contract = { id, objective: input.objective, constraints, criteria, workspaceRoot, testTimeoutMs, frozenAt }
+  if (deliverables.length > 0) contract.deliverables = deliverables
   if (testCmd !== undefined) contract.testCmd = testCmd
   if (policyId !== undefined) contract.policyId = policyId
   return contract

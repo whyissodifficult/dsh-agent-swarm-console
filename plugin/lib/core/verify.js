@@ -7,6 +7,9 @@
  *  - 检查以 contract.workspaceRoot 为根、exec 受 contract.testCmd 白名单约束（P0-2/P0-4）
  *  - approve 必须携带 evidenceHash 自证；retry 置 stale 并保留上次放行信息（P0-6/P1-1）
  */
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { freezeContract } from './contract.js'
 import { makeEvidence, evidenceHash } from './evidence.js'
 import { decide } from './gate.js'
@@ -16,6 +19,26 @@ import { expandTemplate } from './templates.js'
 
 const contracts = new Map()
 const runs = new Map()
+
+/** 0.9.0 · 计算交付物摘要（只读；越界/不存在一律记 failed 项而不是抛）。 */
+function computeDeliverables(contract) {
+  const list = Array.isArray(contract?.deliverables) ? contract.deliverables : []
+  if (list.length === 0) return []
+  const root = contract.workspaceRoot
+  const out = []
+  for (const rel of list) {
+    const abs = resolve(root, rel)
+    const relToRoot = relative(root, abs)
+    if (relToRoot === '..' || relToRoot.startsWith('..' + sep) || isAbsolute(relToRoot)) continue
+    try {
+      const buf = readFileSync(abs)
+      out.push({ path: rel, sha256: createHash('sha256').update(buf).digest('hex'), bytes: buf.length })
+    } catch {
+      out.push({ path: rel, sha256: '', bytes: 0 })
+    }
+  }
+  return out
+}
 
 /** 运行状态键：`${sessionId}:${contractId}` */
 
@@ -198,6 +221,7 @@ export async function verifyRun({ contractId, sessionId = 'default', evidenceInp
         return makeEvidence({
           contractId,
           ...evidenceInput,
+          deliverables: computeDeliverables(contract),
           checks: executed.checks,
           warnings: [...(evidenceInput?.warnings ?? []), ...executed.warnings],
         })

@@ -597,3 +597,47 @@ test('0.8.0 /gate-history：列出落盘契约并按时间倒序', async () => {
   assert.ok(h.text.includes(a.contractId) && h.text.includes(b.contractId), h.text)
   assert.match(h.text, /已确认待校验|GREEN|RED/, h.text)
 })
+
+test('0.9.0 交付物绑定：证据哈希包含交付物内容，改文件就换哈希', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deliv-'))
+  fs.writeFileSync(path.join(root, 'out.txt'), 'v1')
+
+  const s = newStores()
+  const { contractId } = verifyContract({
+    objective: '产出 out.txt', workspaceRoot: root.replace(/\\\\/g, '/'),
+    criteria: [{ id: 'c1', text: '文件存在', checkIds: ['k1'] }],
+    deliverables: ['out.txt'],
+  }, 'default', s.contracts, s.runs)
+  gateFreeze({ contractId, confirm: true }, s.contracts, s.runs)
+
+  const r1 = await verifyRun({ contractId, evidenceInput: { checks: [{ id: 'k1', type: 'file.exists', path: 'out.txt' }] } }, s.contracts, s.runs)
+  assert.equal(r1.decision, 'GREEN', JSON.stringify(r1.reasons))
+  // 同一份证据、不同交付物内容 → 哈希必须变
+  fs.writeFileSync(path.join(root, 'out.txt'), 'v2-changed')
+  const r2 = await verifyRun({ contractId, evidenceInput: { checks: [{ id: 'k1', type: 'file.exists', path: 'out.txt' }] } }, s.contracts, s.runs)
+  assert.equal(r2.decision, 'GREEN')
+  assert.notEqual(r1.evidenceHash, r2.evidenceHash, '改了交付物内容，证据哈希必须不同')
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('0.9.0 交付物绑定：deliverables 进契约哈希（改清单换 contractId）', () => {
+  const s = newStores()
+  const root = process.cwd().replace(/\\\\/g, '/')
+  const a = verifyContract({ objective: 'x', workspaceRoot: root, deliverables: ['a.txt'],
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] }, 'default', s.contracts, s.runs)
+  const b = verifyContract({ objective: 'x', workspaceRoot: root, deliverables: ['b.txt'],
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] }, 'default', s.contracts, s.runs)
+  assert.notEqual(a.contractId, b.contractId, '交付物清单不同，contractId 必须不同')
+})
+
+test('0.9.0 交付物绑定：越界路径在契约阶段就被拒绝', () => {
+  const s = newStores()
+  const root = process.cwd().replace(/\\\\/g, '/')
+  assert.throws(() => verifyContract({ objective: 'x', workspaceRoot: root, deliverables: ['../etc/passwd'],
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] }, 'default', s.contracts, s.runs), /不允许包含 \.\./)
+  assert.throws(() => verifyContract({ objective: 'x', workspaceRoot: root, deliverables: ['C:/Windows/win.ini'],
+    criteria: [{ id: 'c1', text: 't', checkIds: ['k1'] }] }, 'default', s.contracts, s.runs), /必须是相对路径/)
+})

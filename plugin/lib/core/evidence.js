@@ -22,7 +22,10 @@ export function makeEvidence(input) {
   const at = typeof input.at === 'string' && input.at !== '' ? input.at : new Date().toISOString()
   // 0.2.0：模型自报 ok 被忽略时记下的 warning（checks 是请求，不是结论）
   const warnings = Array.isArray(input.warnings) ? input.warnings.filter((w) => typeof w === 'string') : []
-  return { contractId: input.contractId, artifacts, checks, level, status, at, warnings }
+  // 0.9.0：交付物摘要——把「哪些文件、各是什么内容」绑进证据，避免「合格证据配另一份交付物」
+  const deliverables = normalizeDeliverables(input.deliverables)
+  return { contractId: input.contractId, artifacts, checks, level, status, at, warnings,
+    ...(deliverables.length > 0 ? { deliverables } : {}) }
 }
 
 /** 证据内容哈希（用于 verify_run 返回的 evidenceHash）。 */
@@ -31,8 +34,23 @@ export function evidenceHash(evidence) {
     contractId: evidence.contractId,
     artifacts: evidence.artifacts,
     checks: evidence.checks,
+    // 有交付物摘要时必须一起进哈希：否则同一份证据可被配到别的交付物上
+    deliverables: evidence.deliverables ?? [],
   })
   return createHash('sha256').update(canonical).digest('hex').slice(0, 12)
+}
+
+/** 交付物摘要规范化：`[{ path, sha256, bytes }]`，按 path 排序保证哈希稳定。 */
+export function normalizeDeliverables(list) {
+  if (!Array.isArray(list)) return []
+  return list
+    .filter((d) => d && typeof d.path === 'string' && d.path !== '')
+    .map((d) => ({
+      path: d.path,
+      sha256: typeof d.sha256 === 'string' ? d.sha256 : '',
+      bytes: Number.isFinite(d.bytes) ? Math.floor(d.bytes) : 0,
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
 }
 
 export function validateEvidence(evidence) {

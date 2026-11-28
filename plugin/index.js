@@ -159,6 +159,9 @@ function registerVerifyTools(ctx, store) {
           template: { type: 'string', description: '契约模板：readme-install / tests-green / tests-present / package-version:<x>'
             + '（模板与 criteria 二选一；模板自带建议检查，verify_run 不传 checks 时用它）' },
           constraints: { type: 'array', items: { type: 'string' } },
+          deliverables: { type: 'array', items: { type: 'string' },
+            description: '交付物清单（相对 workspaceRoot 的路径）。它们的 sha256 会进证据哈希——'
+              + '这样「合格证据」就不能被配到另一份交付物上' },
           criteria: {
             type: 'array',
             items: {
