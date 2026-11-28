@@ -11,7 +11,7 @@ agent ：好的，已完成 ✅
 
 `/gate-freeze <id> --yes` 确认契约（先回显全文），`/gate-approve <id> <证据hash>` 放行——**这两步模型没有工具，做不了**。
 
-- npm：`dsh-swarm-console@0.6.3` · 实测：DSH 0.2.2-rc.5（Windows）/ 0.2.1-rc.2（Android）
+- npm：`dsh-swarm-console@0.9.0` · 实测：DSH 0.2.2-rc.5（Windows）/ 0.2.1-rc.2（Android）
 - 包页与完整说明：[plugin/README.md](plugin/README.md)
 - 一个真案例：[plugin/docs/CASE-dotdot.md](plugin/docs/CASE-dotdot.md)
 
@@ -42,9 +42,9 @@ agent ：好的，已完成 ✅
 > `plugin_manager` 是**模型侧工具**，不是 shell 命令：在 DSH 会话里让 agent 执行
 > `plugin_manager install_bundle <plugin 绝对路径>`，或在「插件 → 添加插件」里选本地目录。
 
-**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.4.x`，`verify_*` 与斜杠命令（`/gate-freeze`、`/gate-approve`、`/gate-retry`、`/gate-status`）均可用。
+**从 npm 包名安装（已实测）**：DSH「插件 → 添加插件」输入 `dsh-swarm-console`，源选 npm 官方源。DSH 0.2.2-rc.5 实测依赖解析为 `^0.9.x`，`verify_*` 与斜杠命令（`/gate-freeze`、`/gate-approve`、`/gate-retry`、`/gate-status`、`/gate-history`）均可用。
 
-> 两个实操坑：① `^0.3.x` 的 semver 上限不含 0.4.0，跨次版本升级必须显式写版本（让 agent 执行 `plugin_manager install_bundle dsh-swarm-console@0.4.4`）；
+> 两个实操坑：① `^0.8.x` 的 semver 上限不含 0.9.0，跨次版本升级必须显式写版本（让 agent 执行 `plugin_manager install_bundle dsh-swarm-console@0.9.0`）；
 > ② 若 profile 走国内镜像（`registry.npmmirror.com`），新版本要等镜像同步（通常几分钟到半小时），
 > 急用可从官方源下载 tarball 后用本地文件安装。
 
@@ -54,7 +54,8 @@ agent ：好的，已完成 ✅
 
 ## 状态
 
-> ✅ **0.5.0 已发布** —— 契约按会话隔离、证据由插件真实执行（相对 `workspaceRoot`、符号链接也挡）、`exec` 受 `testCmd` 白名单约束、确认与放行都需用户操作。
+> ✅ **0.9.0 已发布** —— 契约按会话隔离、证据由插件真实执行（相对 `workspaceRoot`、符号链接也挡）、`exec` 受 `testCmd` 白名单约束、确认与放行都需用户操作；
+> 0.6 起状态落盘、0.7 六种检查类型、0.8 契约模板与 `/gate-history`、0.9 交付物摘要并入证据哈希。
 
 - [x] 竞品调研与架构设计
 - [x] 设计文档定稿（v1.1）
